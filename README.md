@@ -12,7 +12,7 @@
 - Tauri + React desktop UI: compact task list, quick search/create, detail panel, comments, activity, status and assignee edits.
 - Individual API tokens (hashes stored in database).
 
-**Not yet built:** EvaTeam adapter, synchronization workers, Eva API key vault, production-ready access controls, migrations, automated desktop packaging. Outbox entries are not delivered anywhere yet.
+**Not yet built:** EvaTeam adapter, synchronization workers, production-ready access controls, migrations, automated desktop packaging and unattended signed releases. Outbox entries are not delivered anywhere yet.
 
 ## Run the backend locally
 
@@ -75,3 +75,21 @@ See [docs/architecture.md](docs/architecture.md).
 - No integration to Arachne or Forgejo.
 - Author attribution is recorded locally for every create/update/comment.
 - Future EvaTeam writes must use a user-to-Eva credential mapping, with explicit reconciliation.
+
+## Connect your personal EvaTeam key
+
+Generate a server-side Fernet encryption key once (do not commit it):
+
+```bash
+python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+```
+
+Set `EVADE_CREDENTIAL_KEY` in the environment before starting FastAPI, or in Compose's environment. Keep this key backed up independently from the database: if lost, stored EvaTeam credentials cannot be recovered.
+
+Open **Settings / EvaTeam** in the desktop sidebar and paste your own EvaTeam API key. It is encrypted at rest, associated with your authenticated EvaDE user, and never returned from the server. The setting is persisted and can be rotated or removed. Set `EVADE_EVA_URL=https://your-eva-host/api/` on the backend and use **Проверить подключение** to check the personal token with a read-only `CmfTask.list` query. This probes task-list permission, not every API permission. **No bidirectional sync happens yet.**
+
+For release setup and update limitations see [docs/updates.md](docs/updates.md).
+
+## EvaTeam JSON-RPC transport
+
+The configured server endpoint is HTTPS only. The bridge sends JSON-RPC `2.2` to `/api/` with a per-user `Authorization: Bearer <token>` header. Both HTTP errors and RPC `error`/`abort` payloads are failures. TLS verification stays enabled. See `backend/app/eva_client.py`.

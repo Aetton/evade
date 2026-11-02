@@ -24,6 +24,62 @@ function App() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [showActivity, setShowActivity] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [evaToken, setEvaToken] = useState("");
+  const [evaConnected, setEvaConnected] = useState(false);
+  const [evaConfigured, setEvaConfigured] = useState(false);
+  const [evaEndpointConfigured, setEvaEndpointConfigured] = useState(false);
+  const [evaTestResult, setEvaTestResult] = useState("");
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [serverVersion, setServerVersion] = useState("");
+  const [settingsError, setSettingsError] = useState("");
+  const [desktopUpdate, setDesktopUpdate] = useState<string | null>(null);
+  const [updaterBusy, setUpdaterBusy] = useState(false);
+  const refreshSettings = useCallback(async (client: Api) => {
+    const [connection, version] = await Promise.all([client.evaConnection(), client.serverVersion()]);
+    setEvaConnected(connection.connected);
+    setEvaConfigured(connection.configured);
+    setEvaEndpointConfigured(connection.endpoint_configured);
+    setServerVersion(version.version);
+  }, []);
+  useEffect(() => {
+    if (!api || !showSettings) return;
+    void refreshSettings(api).catch(e => setSettingsError(String(e)));
+  }, [api, showSettings, refreshSettings]);
+  async function saveEvaToken(e: FormEvent) {
+    e.preventDefault(); if (!api || !evaToken.trim()) return;
+    setSettingsBusy(true); setSettingsError("");
+    try { await api.setEvaToken(evaToken.trim()); setEvaToken(""); await refreshSettings(api); }
+    catch (e) { setSettingsError(String(e)); }
+    finally { setSettingsBusy(false); }
+  }
+  async function testEva() {
+    if (!api) return;
+    setSettingsBusy(true); setSettingsError(""); setEvaTestResult("");
+    try { await api.testEvaConnection(); setEvaTestResult("EvaTeam ответила на запрос списка задач."); }
+    catch (e) { setSettingsError(String(e)); }
+    finally { setSettingsBusy(false); }
+  }
+  async function disconnectEva() {
+    if (!api) return;
+    setSettingsBusy(true); setSettingsError("");
+    try { await api.removeEvaToken(); await refreshSettings(api); }
+    catch (e) { setSettingsError(String(e)); }
+    finally { setSettingsBusy(false); }
+  }
+  async function checkDesktopUpdate() {
+    setUpdaterBusy(true); setSettingsError(""); setDesktopUpdate(null);
+    try {
+      const { isTauri } = await import("@tauri-apps/api/core");
+      if (!isTauri()) { setSettingsError("Обновление доступно только в собранном десктопном приложении."); return; }
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (update) { setDesktopUpdate(update.version); await update.close(); }
+      else setDesktopUpdate("Нет обновлений");
+    } catch (e) { setSettingsError("Updater не настроен: " + String(e)); }
+    finally { setUpdaterBusy(false); }
+  }
+
 
   const load = useCallback(async (client: Api) => {
     const [u, p, t] = await Promise.all([client.users(), client.projects(), client.tasks()]);
@@ -135,7 +191,7 @@ function App() {
       </nav>
       <div className="nav-label">ПРОЕКТЫ</div>
       <nav>{projects.map(p => <button key={p.id} className={view === "project:" + p.id ? "nav-active" : ""} onClick={() => setView("project:" + p.id)}><span className="project-dot"/> {p.name}</button>)}</nav>
-      <div className="sidebar-bottom">
+      <div className="sidebar-bottom"><button onClick={() => setShowSettings(true)}><Settings2 size={16}/> Настройки / EvaTeam</button>
         <button onClick={() => void refresh()}><RefreshCw size={16} className={syncing ? "spin" : ""}/> {syncing ? "Обновление…" : "Обновить"}</button>
         <div className="profile"><span className="avatar">{me?.name.slice(0, 1).toUpperCase()}</span><span className="profile-name">{me?.name}</span><button title="Выйти" onClick={() => { setApi(null); setMe(null); setSelected(null); }}><LogOut size={16}/></button></div>
       </div>
@@ -148,6 +204,28 @@ function App() {
       <div className="list-head"><span>ЗАДАЧА</span><span>СТАТУС</span><span>ИСПОЛНИТЕЛЬ</span></div>
       <section className="task-list">{roots.length ? roots.map(t => <div key={t.id}>{taskRow(t)}{visible.filter(c => c.parent_id === t.id).map(c => taskRow(c, 1))}</div>) : <div className="empty"><ListTodo size={38}/><h3>Здесь пока тихо</h3><p>Создай первую задачу или выбери другой раздел.</p></div>}</section>
     </main>
+    {showSettings && <div className="settings-backdrop" onClick={() => setShowSettings(false)}><section className="settings-panel card" onClick={e => e.stopPropagation()}>
+      <div className="section-title"><h2>Настройки EvaDE</h2><button onClick={() => setShowSettings(false)} aria-label="Закрыть"><X size={18}/></button></div>
+      <div className="detail-section"><h3>Персональный доступ к EvaTeam</h3>
+        <p className="muted">{evaConnected ? "Ключ привязан к вашей учётке. Сам ключ не показывается." : "Ключ EvaTeam ещё не привязан."}</p>
+        <p className="muted">{evaConfigured ? "Хранилище ключей доступно." : "Администратор сервера пока не настроил хранилище ключей."}</p>
+        <form className="settings-form" onSubmit={saveEvaToken}>
+          <label>API-ключ EvaTeam<input type="password" autoComplete="off" value={evaToken} onChange={e => setEvaToken(e.target.value)} placeholder="Вставьте свой ключ" required minLength={8}/></label>
+          <button className="primary" disabled={settingsBusy || !evaConfigured || !evaToken.trim()} type="submit">{evaConnected ? "Заменить ключ" : "Сохранить ключ"}</button>
+        </form>
+        {evaConnected && <div className="settings-actions"><button className="secondary-action" disabled={settingsBusy || !evaEndpointConfigured} onClick={() => void testEva()}>Проверить подключение</button><button className="secondary-action" disabled={settingsBusy} onClick={() => void disconnectEva()}>Удалить привязку</button></div>}
+        {evaTestResult && <p className="muted">{evaTestResult}</p>}
+        {!evaEndpointConfigured && <p className="muted">Администратор ещё не указал EVADE_EVA_URL.</p>}
+        <p className="muted">Ключ хранится на сервере зашифрованным. Проверка выполняет безопасный запрос CmfTask.list. Это не проверка всех прав пользователя.</p>
+      </div>
+      <div className="detail-section"><h3>Обновления</h3>
+        <p className="muted">Task Core: {serverVersion || "неизвестно"} · Desktop: 0.1.0</p>
+        <button className="secondary-action" disabled={updaterBusy} onClick={() => void checkDesktopUpdate()}>{updaterBusy ? "Проверяю…" : "Проверить обновления клиента"}</button>
+        {desktopUpdate && <p className="muted">Результат: {desktopUpdate}. Установка появится после настройки подписанных релизов.</p>}
+        <p className="muted">Обновление сервера выполняет администратор, без перезапуска из пользовательского интерфейса.</p>
+      </div>
+      {settingsError && <p className="error">{settingsError}</p>}
+    </section></div>}
     {task && <aside className="details">
       <div className="details-head"><div className="muted"><Settings2 size={15}/> ДЕТАЛИ ЗАДАЧИ</div><button className="icon-btn" onClick={() => setSelected(null)}><X size={18}/></button></div>
       <div className="details-scroll">

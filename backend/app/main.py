@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .database import Base, SessionLocal, engine
-from .models import Activity, Comment, Project, SyncOutbox, Task, User
+from .models import Activity, Comment, EvaCredential, Project, SyncOutbox, Task, User
+from .credentials import store as store_eva_credential, retrieve as retrieve_eva_credential
+from .eva_client import EvaError, probe as probe_eva
 
 STATUSES = ("new", "in_progress", "review", "done")
 
@@ -20,7 +22,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="EvaDE Task Core", version="0.1.0", lifespan=lifespan)
 allowed_origins = os.environ.get("EVADE_CORS_ORIGINS", "http://localhost:1420").split(",")
-app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=["GET", "POST", "PATCH"], allow_headers=["Authorization", "Content-Type"])
+app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type"])
 
 def db_session():
     with SessionLocal() as db:
@@ -37,6 +39,44 @@ def current_user(authorization: str | None = Header(default=None), db: Session =
     if user is None:
         raise HTTPException(401, "Invalid token")
     return user
+
+class EvaTokenIn(BaseModel):
+    token: str = Field(min_length=8, max_length=16384)
+
+@app.get("/integrations/eva")
+def eva_connection(db: Session = Depends(db_session), user: User = Depends(current_user)):
+    row = db.get(EvaCredential, user.id)
+    return {"connected": row is not None, "configured": bool(os.getenv("EVADE_CREDENTIAL_KEY")), "endpoint_configured": bool(os.getenv("EVADE_EVA_URL")), "updated_at": row.updated_at if row else None}
+
+@app.put("/integrations/eva")
+def set_eva_connection(payload: EvaTokenIn, db: Session = Depends(db_session), user: User = Depends(current_user)):
+    # Deliberately does not try to validate against undocumented Eva auth.
+    store_eva_credential(db, user.id, payload.token)
+    db.commit()
+    return {"connected": True}
+
+@app.post("/integrations/eva/test")
+def test_eva_connection(db: Session = Depends(db_session), user: User = Depends(current_user)):
+    token = retrieve_eva_credential(db, user.id)
+    if token is None:
+        raise HTTPException(409, "EvaTeam token is not connected")
+    try:
+        probe_eva(token)
+    except EvaError as exc:
+        # RPC errors contain remote text; do not echo possible secrets from it.
+        raise HTTPException(exc.status, "EvaTeam rejected the request or is unavailable") from exc
+    return {"ok": True, "method": "CmfTask.list"}
+
+@app.delete("/integrations/eva", status_code=204)
+def delete_eva_connection(db: Session = Depends(db_session), user: User = Depends(current_user)):
+    row = db.get(EvaCredential, user.id)
+    if row:
+        db.delete(row)
+        db.commit()
+
+@app.get("/version")
+def version():
+    return {"name": "EvaDE Task Core", "version": app.version, "commit": os.getenv("EVADE_BUILD_SHA", "dev")}
 
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=180)
