@@ -86,6 +86,10 @@ python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 Set `EVADE_CREDENTIAL_KEY` in the environment before starting FastAPI, or in Compose's environment. Keep this key backed up independently from the database: if lost, stored EvaTeam credentials cannot be recovered.
 
-Open **Settings / EvaTeam** in the desktop sidebar and paste your own EvaTeam API key. It is encrypted at rest, associated with your authenticated EvaDE user, and never returned from the server. The setting is persisted and can be rotated or removed. **The credentials are not verified against EvaTeam yet and no sync happens until the EvaTeam adapter is implemented.**
+Open **Settings / EvaTeam** in the desktop sidebar and paste your own EvaTeam API key. It is encrypted at rest, associated with your authenticated EvaDE user, and never returned from the server. The setting is persisted and can be rotated or removed. Set `EVADE_EVA_URL=https://your-eva-host/api/` on the backend and use **Проверить подключение** to check the personal token with a read-only `CmfTask.list` query. This probes task-list permission, not every API permission. **No bidirectional sync happens yet.**
 
 For release setup and update limitations see [docs/updates.md](docs/updates.md).
+
+## EvaTeam JSON-RPC transport
+
+The configured server endpoint is HTTPS only. The bridge sends JSON-RPC `2.2` to `/api/` with a per-user `Authorization: Bearer <token>` header. Both HTTP errors and RPC `error`/`abort` payloads are failures. TLS verification stays enabled. See `backend/app/eva_client.py`.

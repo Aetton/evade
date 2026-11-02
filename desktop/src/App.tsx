@@ -28,6 +28,8 @@ function App() {
   const [evaToken, setEvaToken] = useState("");
   const [evaConnected, setEvaConnected] = useState(false);
   const [evaConfigured, setEvaConfigured] = useState(false);
+  const [evaEndpointConfigured, setEvaEndpointConfigured] = useState(false);
+  const [evaTestResult, setEvaTestResult] = useState("");
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [serverVersion, setServerVersion] = useState("");
   const [settingsError, setSettingsError] = useState("");
@@ -37,6 +39,7 @@ function App() {
     const [connection, version] = await Promise.all([client.evaConnection(), client.serverVersion()]);
     setEvaConnected(connection.connected);
     setEvaConfigured(connection.configured);
+    setEvaEndpointConfigured(connection.endpoint_configured);
     setServerVersion(version.version);
   }, []);
   useEffect(() => {
@@ -47,6 +50,13 @@ function App() {
     e.preventDefault(); if (!api || !evaToken.trim()) return;
     setSettingsBusy(true); setSettingsError("");
     try { await api.setEvaToken(evaToken.trim()); setEvaToken(""); await refreshSettings(api); }
+    catch (e) { setSettingsError(String(e)); }
+    finally { setSettingsBusy(false); }
+  }
+  async function testEva() {
+    if (!api) return;
+    setSettingsBusy(true); setSettingsError(""); setEvaTestResult("");
+    try { await api.testEvaConnection(); setEvaTestResult("EvaTeam ответила на запрос списка задач."); }
     catch (e) { setSettingsError(String(e)); }
     finally { setSettingsBusy(false); }
   }
@@ -203,8 +213,10 @@ function App() {
           <label>API-ключ EvaTeam<input type="password" autoComplete="off" value={evaToken} onChange={e => setEvaToken(e.target.value)} placeholder="Вставьте свой ключ" required minLength={8}/></label>
           <button className="primary" disabled={settingsBusy || !evaConfigured || !evaToken.trim()} type="submit">{evaConnected ? "Заменить ключ" : "Сохранить ключ"}</button>
         </form>
-        {evaConnected && <button className="secondary-action" disabled={settingsBusy} onClick={() => void disconnectEva()}>Удалить привязку</button>}
-        <p className="muted">Ключ хранится на сервере зашифрованным. Валидация ключа в Еве появится вместе с коннектором.</p>
+        {evaConnected && <div className="settings-actions"><button className="secondary-action" disabled={settingsBusy || !evaEndpointConfigured} onClick={() => void testEva()}>Проверить подключение</button><button className="secondary-action" disabled={settingsBusy} onClick={() => void disconnectEva()}>Удалить привязку</button></div>}
+        {evaTestResult && <p className="muted">{evaTestResult}</p>}
+        {!evaEndpointConfigured && <p className="muted">Администратор ещё не указал EVADE_EVA_URL.</p>}
+        <p className="muted">Ключ хранится на сервере зашифрованным. Проверка выполняет безопасный запрос CmfTask.list. Это не проверка всех прав пользователя.</p>
       </div>
       <div className="detail-section"><h3>Обновления</h3>
         <p className="muted">Task Core: {serverVersion || "неизвестно"} · Desktop: 0.1.0</p>

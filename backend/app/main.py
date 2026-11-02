@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .database import Base, SessionLocal, engine
 from .models import Activity, Comment, EvaCredential, Project, SyncOutbox, Task, User
-from .credentials import store as store_eva_credential
+from .credentials import store as store_eva_credential, retrieve as retrieve_eva_credential
+from .eva_client import EvaError, probe as probe_eva
 
 STATUSES = ("new", "in_progress", "review", "done")
 
@@ -45,7 +46,7 @@ class EvaTokenIn(BaseModel):
 @app.get("/integrations/eva")
 def eva_connection(db: Session = Depends(db_session), user: User = Depends(current_user)):
     row = db.get(EvaCredential, user.id)
-    return {"connected": row is not None, "configured": bool(os.getenv("EVADE_CREDENTIAL_KEY")), "updated_at": row.updated_at if row else None}
+    return {"connected": row is not None, "configured": bool(os.getenv("EVADE_CREDENTIAL_KEY")), "endpoint_configured": bool(os.getenv("EVADE_EVA_URL")), "updated_at": row.updated_at if row else None}
 
 @app.put("/integrations/eva")
 def set_eva_connection(payload: EvaTokenIn, db: Session = Depends(db_session), user: User = Depends(current_user)):
@@ -53,6 +54,18 @@ def set_eva_connection(payload: EvaTokenIn, db: Session = Depends(db_session), u
     store_eva_credential(db, user.id, payload.token)
     db.commit()
     return {"connected": True}
+
+@app.post("/integrations/eva/test")
+def test_eva_connection(db: Session = Depends(db_session), user: User = Depends(current_user)):
+    token = retrieve_eva_credential(db, user.id)
+    if token is None:
+        raise HTTPException(409, "EvaTeam token is not connected")
+    try:
+        probe_eva(token)
+    except EvaError as exc:
+        # RPC errors contain remote text; do not echo possible secrets from it.
+        raise HTTPException(exc.status, "EvaTeam rejected the request or is unavailable") from exc
+    return {"ok": True, "method": "CmfTask.list"}
 
 @app.delete("/integrations/eva", status_code=204)
 def delete_eva_connection(db: Session = Depends(db_session), user: User = Depends(current_user)):
