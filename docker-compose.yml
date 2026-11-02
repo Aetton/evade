@@ -1,3 +1,5 @@
+name: evade
+
 services:
   db:
     image: postgres:17-alpine
@@ -5,25 +7,52 @@ services:
     environment:
       POSTGRES_DB: evade
       POSTGRES_USER: evade
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run 'just run' first}
     volumes:
-      - postgres:/var/lib/postgresql/data
+      - evade-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U evade"]
+      test: ["CMD-SHELL", "pg_isready -U evade -d evade"]
       interval: 5s
-      retries: 10
+      timeout: 3s
+      retries: 15
+
   api:
-    build: ./backend
+    build:
+      context: ./backend
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://evade:${POSTGRES_PASSWORD}@db:5432/evade
-      EVADE_CORS_ORIGINS: ${EVADE_CORS_ORIGINS:-http://localhost:1420}
-      EVADE_CREDENTIAL_KEY: ${EVADE_CREDENTIAL_KEY:?Set EVADE_CREDENTIAL_KEY}
-      EVADE_EVA_URL: ${EVADE_EVA_URL:?Set EVADE_EVA_URL}
+      EVADE_CORS_ORIGINS: http://localhost:1420,http://127.0.0.1:1420
+      EVADE_CREDENTIAL_KEY: ${EVADE_CREDENTIAL_KEY:?Run 'just run' first}
+      EVADE_EVA_URL: ${EVADE_EVA_URL:-}
+      EVADE_BUILD_SHA: ${EVADE_BUILD_SHA:-local}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  web:
+    build:
+      context: ./desktop
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${EVADE_WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
-  postgres:
+  evade-db:
