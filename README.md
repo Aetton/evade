@@ -93,3 +93,32 @@ For release setup and update limitations see [docs/updates.md](docs/updates.md).
 ## EvaTeam JSON-RPC transport
 
 The configured server endpoint is HTTPS only. The bridge sends JSON-RPC `2.2` to `/api/` with a per-user `Authorization: Bearer <token>` header. Both HTTP errors and RPC `error`/`abort` payloads are failures. TLS verification stays enabled. See `backend/app/eva_client.py`.
+
+## One-command deployment (Docker + Just)
+
+Requires `git`, `docker` with Compose v2, and `just`. Docker daemon access must be configured for your user.
+
+```bash
+git clone https://github.com/Aetton/evade.git
+cd evade
+just run
+just token
+```
+
+The first run creates a private `.env` (database password and encryption key), starts PostgreSQL, FastAPI and an Nginx-hosted browser UI, and creates a first **EvaDE** admin account. Its API token is saved only in `.secrets/admin-token` (0600). Paste that token into the EvaDE login screen. These are **not** EvaTeam credentials: each user adds their own EvaTeam token via Settings.
+
+- Browser UI (loopback only): http://127.0.0.1:8080
+- API docs: http://127.0.0.1:8000/docs
+- `just logs`, `just status`, `just stop`, `just restart`
+- Set your corporate `EVADE_EVA_URL=https://your-domain/api/` in `.env`, then `just restart` for EvaTeam connection probes.
+- Use `just desktop` for the native Tauri development client (requires Rust/Tauri system packages on the host).
+
+**The web and API ports bind to localhost by design.** For remote teammates deploy HTTPS reverse proxy, access controls, and a trusted hostname. Do not directly expose this early-stage backend to untrusted users; task-level authorization is not implemented yet.
+
+### Backend auto-updates
+
+`just enable-updates` registers a daily host-level `systemd --user` timer. The updater checks fast-forward changes on `main`, refuses a dirty tree, takes a PostgreSQL dump to `.backups/`, builds and restarts Compose services, and rolls back source + images if startup fails. It never automatically restores the database (schema migrations require manual care). Inspect logs with `journalctl --user -u evade-update.service` and disable via `just disable-updates`.
+
+**No Docker socket is mounted into an updater container.** This timer updates the **server stack** only, not the signed native desktop app, which uses a different release/updater channel.
+
+The initial run deliberately does not enable unattended updates automatically. Opt in with `just enable-updates` after verifying your deployment.

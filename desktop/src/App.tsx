@@ -3,7 +3,10 @@ import { Activity, Api, Comment, Project, Status, Task, User } from "./api";
 import { Apple, ArrowRight, Check, ChevronDown, ChevronRight, Circle, Command, Inbox, ListTodo, LoaderCircle, LogOut, MessageSquare, Plus, RefreshCw, Search, Send, Settings2, UserRound, X } from "lucide-react";
 
 const STATUS: Record<Status, string> = { new: "Новая", in_progress: "В работе", review: "На проверке", done: "Готово" };
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_URL = import.meta.env.VITE_API_URL ||
+  (window.location.protocol.startsWith("http") && window.location.port !== "1420"
+    ? window.location.origin
+    : "http://127.0.0.1:8000");
 
 function App() {
   const [api, setApi] = useState<Api | null>(null);
