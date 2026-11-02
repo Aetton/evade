@@ -1,0 +1,37 @@
+export type Status = "new" | "in_progress" | "review" | "done";
+export type User = { id: string; name: string; is_admin: boolean };
+export type Project = { id: string; name: string };
+export type Task = {
+  id: string; title: string; description: string; status: Status;
+  project_id: string | null; parent_id: string | null;
+  priority: number; assignee_id: string | null; created_by: string | null;
+  created_at: string; updated_at: string;
+};
+export type Comment = { id: string; task_id: string; author_id: string; body: string; created_at: string };
+export type Activity = { id: string; actor_id: string | null; kind: string; detail: Record<string, unknown>; created_at: string };
+
+export class Api {
+  constructor(public baseUrl: string, private token: string) {}
+  async request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+    const response = await fetch(this.baseUrl.replace(/\/$/, "") + path, {
+      method,
+      headers: { Authorization: "Bearer " + this.token, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try { const data = await response.json(); detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail); } catch { /* no json */ }
+      throw new Error(response.status + ": " + detail);
+    }
+    return response.json();
+  }
+  me() { return this.request<User>("/me"); }
+  users() { return this.request<User[]>("/users"); }
+  projects() { return this.request<Project[]>("/projects"); }
+  tasks() { return this.request<Task[]>("/tasks?limit=500"); }
+  createTask(task: { title: string; parent_id?: string | null; project_id?: string | null }) { return this.request<Task>("/tasks", "POST", task); }
+  updateTask(id: string, patch: Partial<Task>) { return this.request<Task>("/tasks/" + id, "PATCH", patch); }
+  comments(id: string) { return this.request<Comment[]>("/tasks/" + id + "/comments"); }
+  addComment(id: string, body: string) { return this.request<Comment>("/tasks/" + id + "/comments", "POST", { body }); }
+  activity(id: string) { return this.request<Activity[]>("/tasks/" + id + "/activity"); }
+}
