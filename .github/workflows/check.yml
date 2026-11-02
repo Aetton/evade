@@ -27,3 +27,23 @@ jobs:
           node-version: "22"
       - run: npm install
       - run: npm run build
+  compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: First-run from clean checkout
+        run: just run
+      - name: Verify auth and frontend
+        run: |
+          test -f .secrets/admin-token
+          curl -fsS http://127.0.0.1:8080/ | grep -q EvaDE
+          curl -fsS -H "Authorization: Bearer $(cat .secrets/admin-token)" http://127.0.0.1:8000/me | grep -q '"is_admin":true'
+      - name: Verify idempotency
+        run: |
+          before="$(cat .secrets/admin-token)"
+          just run
+          test "$before" = "$(cat .secrets/admin-token)"
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v || true
