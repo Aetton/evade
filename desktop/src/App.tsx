@@ -111,7 +111,7 @@ function App() {
   }
   if (!api) return <div className="login-wrap"><form className="login card" onSubmit={login}>
     <div className="brand brand-large"><span className="brand-icon"><Apple size={27}/></span><span>Eva<span className="brand-accent">DE</span></span></div>
-    <p className="muted">Eva Desktop Editio. Из Рая выгнали. Зато задачи открываются.</p>
+    <p className="muted">Eva Desktop Edition. Из Рая выгнали. Зато задачи открываются.</p>
     <label>Адрес Task Core<input type="url" required value={server} onChange={e => setServer(e.target.value)} placeholder="http://localhost:8000"/></label>
     <label>Персональный токен<input required type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="Вставь свой токен"/></label>
     <button className="primary" disabled={busy}>{busy ? "Подключаемся…" : "Войти"} <ArrowRight size={16}/></button>
