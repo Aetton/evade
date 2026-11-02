@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+*.db
+*.sqlite3
+node_modules/
+dist/
+src-tauri/target/
+*.log
