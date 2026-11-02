@@ -23,8 +23,13 @@ export class Api {
       try { const data = await response.json(); detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail); } catch { /* no json */ }
       throw new Error(response.status + ": " + detail);
     }
+    if (response.status === 204) return undefined as T;
     return response.json();
   }
+  evaConnection() { return this.request<{connected: boolean; configured: boolean; updated_at: string | null}>("/integrations/eva"); }
+  setEvaToken(token: string) { return this.request<{connected: boolean}>("/integrations/eva", "PUT", { token }); }
+  removeEvaToken() { return this.request<void>("/integrations/eva", "DELETE"); }
+  serverVersion() { return this.request<{version: string; commit: string}>("/version"); }
   me() { return this.request<User>("/me"); }
   users() { return this.request<User[]>("/users"); }
   projects() { return this.request<Project[]>("/projects"); }

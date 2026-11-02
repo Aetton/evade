@@ -18,6 +18,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://evade:${POSTGRES_PASSWORD}@db:5432/evade
       EVADE_CORS_ORIGINS: ${EVADE_CORS_ORIGINS:-http://localhost:1420}
+      EVADE_CREDENTIAL_KEY: ${EVADE_CREDENTIAL_KEY:?Set EVADE_CREDENTIAL_KEY}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
