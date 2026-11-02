@@ -1,6 +1,6 @@
 # EvaDE 🍎
 
-**Eva Desktop Editio**. A fast desktop-first task tracker, with an independent data model and a planned bi-directional EvaTeam sync adapter.
+**Eva Desktop Edition**. A fast desktop-first task tracker, with an independent data model and a planned bi-directional EvaTeam sync adapter.
 
 > _Из Рая выгнали. Зато задачи открываются._
 
