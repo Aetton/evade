@@ -15,6 +15,7 @@ if [[ ! -f .env ]]; then
 POSTGRES_PASSWORD=${password}
 EVADE_CREDENTIAL_KEY=${key}
 EVADE_EVA_URL=
+EVADE_BIND_ADDRESS=127.0.0.1
 EVADE_WEB_PORT=8080
 EOF
   chmod 600 .env

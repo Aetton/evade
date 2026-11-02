@@ -122,3 +122,15 @@ The first run creates a private `.env` (database password and encryption key), s
 **No Docker socket is mounted into an updater container.** This timer updates the **server stack** only, not the signed native desktop app, which uses a different release/updater channel.
 
 The initial run deliberately does not enable unattended updates automatically. Opt in with `just enable-updates` after verifying your deployment.
+
+### Network and EvaTeam configuration
+
+Set in the generated `.env`:
+
+```dotenv
+EVADE_BIND_ADDRESS=0.0.0.0
+EVADE_WEB_PORT=8080
+EVADE_EVA_URL=https://eva.example.internal/api/
+```
+
+`EVADE_BIND_ADDRESS` configures the **web** listener; API port 8000 remains localhost-only. Change to `0.0.0.0` only behind a trusted network or reverse proxy with HTTPS. `EVADE_EVA_URL` is the single server-side upstream address, while each user retains an individual EvaTeam Bearer token. New installs default to `127.0.0.1`; existing `.env` is left untouched and needs the variables added manually. Apply using `just restart`.
