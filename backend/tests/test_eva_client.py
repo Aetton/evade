@@ -9,8 +9,9 @@ def test_rpc_bearer_and_result(monkeypatch):
         seen["method"] = request.json() if hasattr(request, "json") else __import__("json").loads(request.content)
         seen["authorization"] = request.headers["Authorization"]
         return httpx.Response(200, json={"jsonrpc":"2.2", "result": [], "callid":seen["method"]["callid"]})
+    original_client = httpx.Client
     class Client:
-        def __init__(self, **kwargs): self.ctx = httpx.Client(transport=httpx.MockTransport(handler))
+        def __init__(self, **kwargs): self.ctx = original_client(transport=httpx.MockTransport(handler))
         def __enter__(self): return self.ctx
         def __exit__(self, *args): self.ctx.close()
         def post(self, *args, **kwargs): return self.ctx.post(*args, **kwargs)
