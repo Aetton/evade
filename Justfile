@@ -27,7 +27,7 @@ token:
 
 # Print stack URLs.
 urls:
-    @echo "Web: http://127.0.0.1:$$(sed -n 's/^EVADE_WEB_PORT=//p' .env | head -1)"
+    @echo "Web: http://127.0.0.1:$(sed -n 's/^EVADE_WEB_PORT=//p' .env | head -1)"
     @echo "API: http://127.0.0.1:8000/docs"
 
 # Stop containers without deleting any data.
@@ -51,4 +51,4 @@ desktop:
 
 # Run backend unit tests inside the API container.
 test:
-    @docker compose exec -T api python -m pytest -q
+    @docker run --rm -v "$PWD/backend:/src" -w /src python:3.12-slim sh -c "pip install -q -e '.[test]' && pytest -q"
