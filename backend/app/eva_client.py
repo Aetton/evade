@@ -6,7 +6,11 @@ Never accept a caller-supplied URL or disable TLS verification.
 import os
 from uuid import uuid4
 from urllib.parse import urlsplit
+import json
 import httpx
+import urllib3
+from . import pin_store
+from .ca_store import CertificateError
 from .ca_store import verify_context
 
 class EvaError(Exception):
@@ -28,19 +32,42 @@ def endpoint() -> str:
 
 def call(token: str, method: str, *, kwargs: dict | None = None, args: list | None = None) -> object:
     body = {"jsonrpc": "2.2", "method": method, "args": args or [], "kwargs": kwargs or {}, "callid": str(uuid4())}
+    target = endpoint()
+    host = urlsplit(target).hostname
     try:
-        with httpx.Client(timeout=10.0, follow_redirects=False, trust_env=False, verify=verify_context()) as client:
-            response = client.post(endpoint(), json=body, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    except (httpx.RequestError, OSError) as exc:
+        fingerprint = pin_store.installed_fingerprint(host)
+        if fingerprint:
+            # urllib3 verifies assert_fingerprint during the very same TLS handshake
+            # before transmitting JSON-RPC or user credentials.
+            with urllib3.PoolManager(
+                cert_reqs="CERT_NONE",
+                assert_fingerprint=fingerprint,
+                timeout=urllib3.Timeout(connect=10, read=10),
+                retries=False,
+            ) as pool:
+                raw = pool.request(
+                    "POST", target,
+                    body=json.dumps(body).encode("utf-8"),
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    redirect=False,
+                )
+                status_code = raw.status
+                response_data = raw.data
+        else:
+            with httpx.Client(timeout=10.0, follow_redirects=False, trust_env=False, verify=verify_context()) as client:
+                response = client.post(target, json=body, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+                status_code = response.status_code
+                response_data = response.content
+    except (httpx.RequestError, urllib3.exceptions.HTTPError, OSError, CertificateError) as exc:
         # Never expose remote response bodies, internal addresses or credentials.
         reason = "TLS certificate verification failed" if "CERTIFICATE_VERIFY_FAILED" in str(exc) else "network connection failed"
         raise EvaError(f"EvaTeam: {reason}") from exc
-    if response.status_code in (401, 403):
+    if status_code in (401, 403):
         raise EvaError("EvaTeam rejected the token or permissions", status=422)
-    if response.status_code != 200:
-        raise EvaError(f"EvaTeam HTTP {response.status_code}")
+    if status_code != 200:
+        raise EvaError(f"EvaTeam HTTP {status_code}")
     try:
-        data = response.json()
+        data = json.loads(response_data)
     except ValueError as exc:
         raise EvaError("EvaTeam returned invalid JSON") from exc
     if not isinstance(data, dict):
