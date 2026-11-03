@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Api } from "./api";
 import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star } from "lucide-react";
 
@@ -154,7 +154,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       }
     }
   }
-  function onPeopleScroll(e: React.UIEvent<HTMLDivElement>) {
+  function onPeopleScroll(e: UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) void loadMorePeople();
   }
@@ -233,13 +233,11 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       <p className="muted">Ваша EvaTeam не отдаёт владельца API-токена. Найди свою учётную запись в справочнике. Выбор запомнится в этом браузере.</p>
       <input aria-label="Найти себя в EvaTeam" placeholder="Имя или логин…" value={peopleSearch}
         onChange={e => setPeopleSearch(e.target.value)} />
-      <div className="eva-person-options">
-        {people.filter(p => (val(p.name) + " " + val(p.login)).toLowerCase().includes(peopleSearch.toLowerCase()))
-          .map((p, i) => <button type="button" key={val(p.id) || i}
+      <div className="eva-person-options" onScroll={onPeopleScroll}>
+        {people.map((p, i) => <button type="button" key={val(p.id) || i}
             onClick={() => chooseSelf(p)}>{val(p.name) || val(p.login) || val(p.id)} · {val(p.login)}</button>)}
       </div>
-      {peopleHasMore && <button type="button" disabled={peopleLoading}
-        onClick={() => void loadMorePeople()}>{peopleLoading ? "Загружаю…" : "Загрузить ещё сотрудников"}</button>}
+      {peopleLoading && <p className="muted">Ищу сотрудников…</p>}}
     </section>}
     <div className="eva-person-tabs">
       <button type="button" className={activePerson === self?.id ? "active" : ""} disabled={!self}
@@ -268,9 +266,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         })}
         {!availablePeople.length && <p className="muted">Сотрудники не найдены в загруженном справочнике.</p>}
       </div>
-      {peopleHasMore && <button type="button" disabled={peopleLoading} onClick={() => void loadMorePeople()}>
-        {peopleLoading ? "Загружаю…" : "Загрузить ещё сотрудников"}
-      </button>}
+      {peopleLoading && <p className="muted">Ищу сотрудников…</p>}}
       <p className="muted">Закреплённые сотрудники доступны отдельными вкладками. Список сохраняется в этом браузере.</p>
     </section>}
     <div className="eva-controls">
@@ -293,10 +289,13 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     <div className="eva-layout">
       <section className="eva-list">
         <div className="eva-list-heading"><strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong><span>{loading ? "Загрузка…" : `Показано: ${page.items.length}`}</span></div>
-        {page.items.map((t, i) => <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")} onClick={() => setSelected(taskCode(t))}>
-          <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
-          <span className="eva-row-meta">{val(t.status)} · {val(t.responsible) || "Без исполнителя"}</span>
-        </button>)}
+        {groupedTasks.map(([group, tasks]) => <details key={group} className="eva-status-group" open>
+          <summary><span>{group}</span><span className="eva-status-count">{tasks.length}</span></summary>
+          {tasks.map((t, i) => <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")} onClick={() => setSelected(taskCode(t))}>
+            <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
+            <span className="eva-row-meta">{val(t.responsible) || "Без исполнителя"}</span>
+          </button>)}
+        </details>)}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
         <div className="eva-pager"><button disabled={page.offset === 0 || loading} onClick={() => void loadList(Math.max(0, page.offset - 50))}><ChevronLeft size={15}/> Назад</button><span>{page.offset + 1}–{page.offset + page.items.length}</span><button disabled={!page.has_more || loading} onClick={() => void loadList(page.offset + 50)}>Далее <ChevronRight size={15}/></button></div>
       </section>
