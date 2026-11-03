@@ -355,9 +355,9 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     setGroupBy(mode);
     try { localStorage.setItem("evade:task-group:" + userId, mode); } catch { /* ignored */ }
   }
-  function toggleStatus(key: string) {
+  function toggleStatus(key: string, defaultCollapsed = false) {
     setCollapsedStatuses(current => {
-      const updated = {...current, [key]: !current[key]};
+      const updated = {...current, [key]: !(current[key] ?? defaultCollapsed)};
       try { localStorage.setItem("evade:eva-collapsed:" + userId, JSON.stringify(updated)); }
       catch { /* Storage may be disabled. */ }
       return updated;
@@ -403,7 +403,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     const collapsed = collapsedStatuses[key] ?? (node.count === 0);
     return <section className="eva-project-group" key={key}>
       <button type="button" className="eva-project-heading" style={{paddingLeft: 16 + level * 13}}
-        aria-expanded={!collapsed} title={node.path} onClick={() => toggleStatus(key)}>
+        aria-expanded={!collapsed} title={node.path} onClick={() => toggleStatus(key, node.count === 0)}>
         <span className="eva-status-arrow">{collapsed ? "▸" : "▾"}</span>
         <span className="eva-project-title">{node.name}</span>
         <span className="eva-status-count">{node.count}</span>
