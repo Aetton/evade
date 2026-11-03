@@ -136,6 +136,9 @@ def test_person_name_search_filters_upstream_before_pagination(monkeypatch):
         assert calls[-1][0] == "CmfPerson.list"
         assert calls[-1][1]["filter"] == ["name", "LIKE", "%Иван%"]
         assert calls[-1][1]["slice"] == [10, 30]
+        account = client.get("/eva/people?name=kirill.nechaev", headers=headers)
+        assert account.status_code == 200
+        assert calls[-1][1]["filter"] == ["login", "==", "kirill.nechaev"]
         response = client.get("/eva/people?offset=0", headers=headers)
         assert response.status_code == 200
         assert "filter" not in calls[-1][1]
