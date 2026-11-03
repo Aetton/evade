@@ -20,7 +20,7 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [view, setView] = useState("mine");
+  const [view, setView] = useState("eva");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -284,8 +284,7 @@ function App() {
       <div className="brand"><span className="brand-icon"><Apple size={20}/></span><span>Eva<span className="brand-accent">DE</span></span></div>
       <nav>
         <button className={view === "eva" ? "nav-active" : ""} onClick={() => setView("eva")}><ListTodo size={17}/> EvaTeam · Задачи</button>
-        <button className={view === "mine" ? "nav-active" : ""} onClick={() => setView("mine")}><UserRound size={17}/> Мои задачи</button>
-        <button className={view === "all" ? "nav-active" : ""} onClick={() => setView("all")}><ListTodo size={17}/> Все задачи <span className="nav-count">{tasks.length}</span></button>
+        <button className={view === "mine" ? "nav-active" : ""} onClick={() => setView("mine")}><UserRound size={17}/> Локальные · мои</button>
         <button className={view === "inbox" ? "nav-active" : ""} onClick={() => setView("inbox")}><Inbox size={17}/> Без исполнителя</button>
       </nav>
       <div className="nav-label">ПРОЕКТЫ</div>
