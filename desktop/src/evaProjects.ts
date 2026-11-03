@@ -116,8 +116,7 @@ export function buildProjectTree(tasks: EvaRow[], projects: ProjectRow[]): Proje
     }
   };
   sort(roots);
-  // Keep the project ancestry; empty sibling branches stay hidden in the assignee view.
-  const prune = (items: ProjectTreeNode[]): ProjectTreeNode[] =>
-    items.filter(n => { n.children = prune(n.children); return n.count > 0; });
-  return prune(roots);
+  // Expose real project sections even when this employee currently has no
+  // assigned tasks there. The original pruning hid most of Broker VDI tree.
+  return roots;
 }
