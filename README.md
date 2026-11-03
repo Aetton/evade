@@ -134,3 +134,7 @@ EVADE_EVA_URL=https://eva.example.internal/api/
 ```
 
 `EVADE_BIND_ADDRESS` configures the **web** listener; API port 8000 remains localhost-only. Change to `0.0.0.0` only behind a trusted network or reverse proxy with HTTPS. `EVADE_EVA_URL` is the single server-side upstream address, while each user retains an individual EvaTeam Bearer token. New installs default to `127.0.0.1`; existing `.env` is left untouched and needs the variables added manually. Apply using `just restart`.
+
+### Corporate CA without shell access
+
+Login as the EvaDE administrator, open **Настройки → Администратор · CA EvaTeam**, select a public PEM-encoded CA certificate (or PEM bundle), and click **Установить CA**. The API validates CA BasicConstraints, expiry, and parses the certificate bundle before atomically saving it to the persistent `evade-certs` Docker volume. It applies to new outgoing EvaTeam TLS connections immediately, without restarting the server or disabling normal system trust verification. The page is admin-only, and the backend checks `User.is_admin` on every CA operation. Existing per-user EvaTeam keys are not changed. The uploaded CA is a trust anchor, so only upload CA certificates from your organization.

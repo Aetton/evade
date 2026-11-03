@@ -11,6 +11,7 @@ from .database import Base, SessionLocal, engine
 from .models import Activity, Comment, EvaCredential, Project, SyncOutbox, Task, User
 from .credentials import store as store_eva_credential, retrieve as retrieve_eva_credential
 from .eva_client import EvaError, probe as probe_eva
+from .ca_store import CertificateError, install as install_ca, remove as remove_ca, status as ca_status, MAX_PEM_BYTES
 
 STATUSES = ("new", "in_progress", "review", "done")
 
@@ -39,6 +40,34 @@ def current_user(authorization: str | None = Header(default=None), db: Session =
     if user is None:
         raise HTTPException(401, "Invalid token")
     return user
+
+def admin_user(user: User = Depends(current_user)) -> User:
+    if not user.is_admin:
+        raise HTTPException(403, "Administrator access required")
+    return user
+
+class CaBundleIn(BaseModel):
+    pem: str = Field(min_length=1, max_length=MAX_PEM_BYTES)
+
+@app.get("/admin/eva/ca")
+def get_eva_ca(_: User = Depends(admin_user)):
+    return ca_status()
+
+@app.put("/admin/eva/ca")
+def put_eva_ca(payload: CaBundleIn, _: User = Depends(admin_user)):
+    try:
+        return install_ca(payload.pem.encode("utf-8"))
+    except CertificateError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(503, "CA storage is not writable") from exc
+
+@app.delete("/admin/eva/ca", status_code=204)
+def delete_eva_ca(_: User = Depends(admin_user)):
+    try:
+        remove_ca()
+    except OSError as exc:
+        raise HTTPException(503, "CA storage is not writable") from exc
 
 class EvaTokenIn(BaseModel):
     token: str = Field(min_length=8, max_length=16384)
