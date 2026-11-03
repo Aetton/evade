@@ -20,7 +20,10 @@ const projectCode = (p: Row) => val(p.code);
 const richText = (x: unknown) => val(x).replace(/<br\s*\/?\s*>/gi, "\n").replace(/<[^>]*>/g, "");
 
 export default function EvaTasks({ api, userId }: { api: Api; userId: string }) {
-  const [self, setSelf] = useState<{id:string;name:string}|null>(null);
+  const [self, setSelf] = useState<{id:string;name:string}|null>(() => {
+    try { return JSON.parse(localStorage.getItem("evade:eva-self:" + userId) || "null"); }
+    catch { return null; }
+  });
   const [activePerson, setActivePerson] = useState("");
   const [followed, setFollowed] = useState<string[]>(() => {
     try {
@@ -75,8 +78,12 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   useEffect(() => {
     let active = true;
     void api.evaSelf().then(identity => {
-      if (active) { setSelf(identity); setActivePerson(identity.id); }
-    }).catch(e => { if (active) setError("Не удалось определить пользователя EvaTeam: " + String(e)); });
+      if (active && identity.id) {
+        setSelf({id: identity.id, name: identity.name || identity.id});
+        setActivePerson(identity.id);
+        try { localStorage.setItem("evade:eva-self:" + userId, JSON.stringify(identity)); } catch { /* ignore */ }
+      }
+    }).catch(e => { if (active) setError("Не удалось связаться с EvaTeam: " + String(e)); });
     void api.evaProjects().then(p => { if (active) setProjects(p.items); })
       .catch(e => { if (active) setError(String(e)); });
     void api.evaPeople().then(p => {
@@ -84,6 +91,16 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     }).catch(e => { if (active) setError(String(e)); });
     return () => { active = false; };
   }, [api]);
+  useEffect(() => {
+    if (self && !activePerson) setActivePerson(self.id);
+  }, [self, activePerson]);
+  function chooseSelf(p: Row) {
+    const id = val(p.id);
+    if (!/^(Person|CmfPerson):[a-zA-Z0-9_-]+$/.test(id)) return;
+    const identity = {id, name: val(p.name) || val(p.login) || id};
+    setSelf(identity); setActivePerson(id); setManagePeople(false); setError("");
+    try { localStorage.setItem("evade:eva-self:" + userId, JSON.stringify(identity)); } catch { /* ignore */ }
+  }
   useEffect(() => {
     if (activePerson) { setSelected(""); void loadList(0); }
   }, [activePerson, loadList]);
