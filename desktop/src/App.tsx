@@ -2,7 +2,7 @@ import EvaTasks from "./EvaTasks";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Api, User } from "./api";
 import { isTauri } from "@tauri-apps/api/core";
-import { ArrowRight, ListTodo, LogOut, Settings2, X } from "lucide-react";
+import { ArrowRight, LogOut, Settings2, X } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL ||
   (window.location.protocol.startsWith("http") && window.location.port !== "1420"
@@ -191,7 +191,7 @@ function App() {
     <aside className="sidebar">
       <div className="brand"><span className="brand-icon"><img width="32" height="32" src="/favicon.svg" alt=""/></span><span>Eva<span className="brand-accent">DE</span></span></div>
       <nav><div className="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
-        <button className="nav-active"><ListTodo size={17}/> Задачи</button>
+        <div id="eva-task-navigation"/>
       </nav>
       <div className="sidebar-bottom">
         <button onClick={() => setShowSettings(true)}><Settings2 size={16}/> Настройки</button>

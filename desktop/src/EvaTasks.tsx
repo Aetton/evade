@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Api } from "./api";
 import { groupEvaTasks } from "./evaStatus";
@@ -371,7 +372,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     try { localStorage.setItem("evade:theme", theme); localStorage.setItem("evade:density", compact ? "compact" : "normal"); } catch {}
   }, [theme,compact]);
   const groups = groupEvaTasks(page.items);
-  const groupedTasks = filter ? groups.filter(g => g.key===filter) : groups;
+  const groupedTasks = filter ? groups.filter(g => g.label===filter) : groups;
   const projectTree = buildProjectTree(filter ? groupedTasks.flatMap(g=>g.rows) : page.items, projects);
   const filteredProjectTree = (() => {
     if (!project) return projectTree;
@@ -398,7 +399,10 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
       return updated;
     });
   }
-  const statusSummary = groups.map(g => ({label:g.label,count:g.rows.length,key:g.key}));
+  const summaryLabels = [...new Set([...STATUS_CODES, ...groups.map(group => group.label)])];
+  const statusSummary = summaryLabels.map(label => ({
+    key: label, label, count: groups.filter(group => group.label === label).reduce((sum, group) => sum + group.rows.length, 0)
+  }));
   function taskEntry(t: Row, index: number) {
     return <button key={taskCode(t) || index}
       className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
@@ -437,9 +441,9 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
             </button>
           : <span className="eva-task-leaf" aria-hidden="true">·</span>}
         <button type="button" className="eva-task-open" onClick={() => openTask(code)}>
-          <span className="eva-code">{code}</span>
+          <i className="lab-status-dot" data-status={status(node.task)} title={status(node.task)}/><span className="eva-code">{code}</span>
           <strong>{val(node.task.name) || "(без названия)"}</strong>
-          <span className="eva-row-meta">{val(node.task.status)} · Приоритет {val(node.task.priority) || "0"}</span>
+          
         </button>
         {node.children.length > 0 && <span className="eva-status-count">{node.count - 1}</span>}
       </div>
@@ -473,14 +477,31 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
       </>}
     </section>;
   }
+  const navHost = document.getElementById("eva-task-navigation");
+  const teamActive = Boolean(activePerson && activePerson !== self?.id);
+  function switchPerson(id: string) {
+    if (id && (activePerson === id || canLeave())) setActivePerson(id);
+  }
+  const directChildren = page.items.filter(row => {
+    if (!task) return false;
+    const parent = row.parent_task_id || row.parent_id;
+    const ref = parent && typeof parent === "object" ? (parent as Row).id : parent;
+    return !!ref && (ref === task.id || ref === selected);
+  });
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div className="eva-workspace lab-shell" data-compact={compact}><div className="lab-center">
+    {navHost && createPortal(<><button className={!teamActive?"nav-active":""} onClick={()=>switchPerson(self?.id || "")}><UserRound size={16}/> Мои задачи</button><button className={teamActive?"nav-active":""} onClick={()=>followed.length ? switchPerson(followed[0]) : setManagePeople(true)}><Users size={16}/> Команда</button></>,navHost)}
     <header className="eva-head">
-      <div><small>ЗАДАЧИ · ЕДИНОЕ РАБОЧЕЕ ПРОСТРАНСТВО</small><h1>{activePerson === self?.id ? "Мои задачи" : "Команда / " + nameFor(activePerson)}</h1>
+      <div><small>EVADE / РАБОЧЕЕ ПРОСТРАНСТВО</small><h1>{activePerson === self?.id ? "Мои задачи" : "Команда / " + nameFor(activePerson)}</h1>
         <div className="eva-sync-caption">{offlineCache ? <><CloudOff size={13}/> Сохранённая копия · только просмотр</> :
           <><Cloud size={13}/> Данные EvaTeam · {lastSync ? "проверены " + lastSync.toLocaleTimeString("ru-RU", {hour:"2-digit",minute:"2-digit"}) : "подключение"}</>}</div>
       </div>
-      <div className="eva-head-actions">
+      <div className="eva-group-switch" role="group" aria-label="Группировка задач">
+          <button type="button" className={!board && groupBy === "project" ? "active" : ""}
+            onClick={() => {setBoard(false);setGrouping("project");}}>Дерево</button>
+          <button type="button" className={!board && groupBy === "status" ? "active" : ""}
+            onClick={() => {setBoard(false);setGrouping("status");}}>Статусы</button><button type="button" className={board?"active":""} onClick={()=>setBoard(true)}>Доска</button>
+        </div><div className="eva-head-actions">
         <button className="secondary-action" onClick={() => void runSync()} disabled={syncBusy || !activePerson}><RefreshCw size={15} className={syncBusy ? "spin" : ""}/> Синхронизировать</button>
         <button className="secondary-action" onClick={() => void loadList(0)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
       </div>
@@ -528,12 +549,9 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
       <p className="muted">Закреплённые сотрудники доступны отдельными вкладками. Список сохраняется в этом браузере.</p>
     </section>}
     <div className="eva-controls">
-      <select value={project} onChange={e => {if(canLeave()){setProject(e.target.value);setSelected("");}}}>
-        <option value="">Все доступные проекты</option>
-        {projects.map(p => <option key={projectId(p) || projectCode(p)} value={projectId(p)}>{val(p.name) || projectCode(p)}</option>)}
-      </select>
+      
       <form onSubmit={e => {e.preventDefault();if(search===draftSearch || canLeave())setSearch(draftSearch);}}><input ref={searchInput} aria-label="Поиск задач" onKeyDown={e => {if(e.key==="Escape" && (!search || canLeave())){setDraftSearch("");setSearch("");}}} placeholder="Поиск задач (/)…" value={draftSearch} onChange={e => setDraftSearch(e.target.value)}/><button type="submit">Найти</button></form>
-      <button disabled={offlineCache} onClick={() => setNewTask(v => !v)}><Plus size={16}/> Новая задача</button>
+      <button aria-label="Новая задача" title="Новая задача" disabled={offlineCache} onClick={() => setNewTask(v => !v)}><Plus size={16}/></button>
     </div>
     {error && <div className="eva-alert" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
     {message && <p className="eva-message">{message}</p>}
@@ -546,7 +564,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     </form>}
     {(page.items.length > 0 || filter) && <div className="eva-summary-strip">{filter && <button onClick={()=>setFilter("")}>Сбросить фильтр</button>}
       {statusSummary.map(item => <button key={item.key} className="eva-summary-stat" aria-pressed={filter===item.key} onClick={()=>setFilter(filter===item.key?"":item.key)}>
-        <span>{item.label}</span><strong>{item.count}</strong>
+        <i className="lab-status-dot" data-status={item.label}/><span>{item.label}</span><strong>{item.count}</strong>
       </button>)}
     </div>}
     <div className="eva-layout">
@@ -555,12 +573,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
           <strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong>
           <span>{loading ? "Загрузка…" : `Задач: ${page.items.length}`}</span>
         </div>
-        <div className="eva-group-switch" role="group" aria-label="Группировка задач">
-          <button type="button" className={!board && groupBy === "project" ? "active" : ""}
-            onClick={() => {setBoard(false);setGrouping("project");}}>Дерево</button>
-          <button type="button" className={groupBy === "status" ? "active" : ""}
-            onClick={() => {setBoard(false);setGrouping("status");}}>Статусы</button><button type="button" className={board?"active":""} onClick={()=>setBoard(true)}>Доска</button>
-        </div>
+        
         {board ? <div className="lab-board">{groupedTasks.map(g=><section key={g.key}><h3>{g.label} · {g.rows.length}</h3>{g.rows.map(row=><button key={taskCode(row)} onClick={()=>openTask(taskCode(row))} aria-pressed={selected===taskCode(row)}><small>{taskCode(row)}</small><strong>{val(row.name)}</strong></button>)}</section>)}</div> : groupBy === "project"
           ? filteredProjectTree.map(node => projectSection(node))
           : groupedTasks.map(group => statusSection(group, "root"))}
@@ -568,13 +581,16 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
         <div className="eva-pager"><span>Загружено задач: {page.items.length}</span>{page.has_more && <button disabled={loading} onClick={() => void loadList(page.items.length)}>{loading ? "Загрузка…" : "Загрузить ещё"} <ChevronRight size={15}/></button>}</div>
       </section>
     </div>
-    <footer className="lab-options"><label>Тема <select value={theme} onChange={e=>setTheme(e.target.value)}><option value="night">Neon noir</option><option value="oxide">Cobalt</option><option value="paper">Paper</option></select></label><label>Плотность <select value={compact?"compact":"normal"} onChange={e=>setCompact(e.target.value==="compact")}><option value="normal">Обычная</option><option value="compact">Компактная</option></select></label></footer></div>
+    <footer className="lab-options"><label>Проект <select value={project} onChange={e => {if(canLeave()){setProject(e.target.value);setSelected("");}}}>
+        <option value="">Все доступные проекты</option>
+        {projects.map(p => <option key={projectId(p) || projectCode(p)} value={projectId(p)}>{val(p.name) || projectCode(p)}</option>)}
+      </select></label><label>Тема <select value={theme} onChange={e=>setTheme(e.target.value)}><option value="night">Neon noir</option><option value="oxide">Cobalt</option><option value="paper">Paper</option></select></label><label>Плотность <select value={compact?"compact":"normal"} onChange={e=>setCompact(e.target.value==="compact")}><option value="normal">Обычная</option><option value="compact">Компактная</option></select></label></footer></div>
       <section ref={editor} className="eva-editor" data-selected={!!selected}>
         {!task ? <p className="muted eva-empty">Выбери задачу для просмотра и редактирования.</p> : <>
-          <div className="eva-editor-heading"><h3>{selected}</h3><button onClick={() => openTask("")}><X size={16}/></button></div>
-          <form onSubmit={saveEdit} className="eva-edit-form">
-            <label>Название<input value={editName} onChange={e => setEditName(e.target.value)}/></label>
-            <label>Описание<textarea rows={5} value={editText} onChange={e => setEditText(e.target.value)}/></label>
+          <div className="eva-editor-heading"><span className="lab-edit-badge">Редактирование</span><small>{selected}</small><button onClick={() => openTask("")}><X size={16}/></button></div>
+          <form id="eva-task-edit" onSubmit={saveEdit} className="eva-edit-form"><small>ЗАДАЧА / {selected}</small>
+            <label className="lab-title"><input aria-label="Название задачи" value={editName} onChange={e => setEditName(e.target.value)}/></label>
+            
             <div className="eva-edit-grid">
               <label>Статус
                 <select value={editStatus} onChange={e => setEditStatus(e.target.value)}>
@@ -606,12 +622,20 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
                   }}>{val(person.name) || val(person.login)} <small>{val(person.login)}</small></button>)}
               </div>}
             </div>
-            <button className="eva-primary" disabled={saving || offlineCache || !editName.trim() || !dirty}><Save size={16}/> Сохранить изменения</button>
+            <label>Проект<span>{val(task.project) || val(projects.find(p=>projectId(p)===val(task.project_id))?.name) || val(task.project_id) || "—"}</span></label><label>Описание<textarea rows={5} value={editText} onChange={e => setEditText(e.target.value)}/></label>
           </form>
+          <section className="lab-children"><h3>Подзадачи <small>{directChildren.length} в выборке</small></h3>{directChildren.map(row=><button key={taskCode(row)} onClick={()=>openTask(taskCode(row))}><i className="lab-status-dot" data-status={status(row)}/>{val(row.name)}<small>{taskCode(row)}</small></button>)}</section>
           <div className="eva-comments"><h3><MessageSquare size={15}/> Комментарии ({comments.length})</h3>
             {comments.map((c,i) => <div className="eva-comment" key={i}><small>{val(c.cmf_author) || val(c.author) || "Автор"}</small><p>{richText(c.text)}</p></div>)}
             <form onSubmit={sendComment}><textarea rows={3} placeholder="Новый комментарий…" value={comment} onChange={e => setComment(e.target.value)}/><button disabled={saving || offlineCache || !comment.trim()}>Отправить</button></form>
           </div>
+          <footer className="lab-edit-actions"><small>{dirty?"Есть несохранённые правки":"Все правки сохранены"}</small><button type="button" disabled={saving || !dirty} onClick={()=>{
+              setEditName(val(task.name)); setEditText(val(task.text)); setEditStatus(status(task)); setEditPriority(priority(task));
+              const person = task.responsible && typeof task.responsible === "object" ? task.responsible as Row : null;
+              setEditResponsible(val(person?.id) || val(task.responsible_id));
+              setResponsibleName(val(person?.name) || val(task.responsible) || "Не назначен");
+              setResponsibleSearch(""); setResponsibleMatches([]);
+            }}>Сбросить</button><button form="eva-task-edit" type="submit" className="eva-primary" disabled={saving || offlineCache || !editName.trim() || !dirty}><Save size={16}/> Сохранить изменения</button></footer>
         </>}
       </section>
   </div>;
