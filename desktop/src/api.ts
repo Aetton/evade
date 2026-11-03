@@ -40,7 +40,7 @@ export class Api {
     return this.request<{items: Record<string, unknown>[]; offset: number; limit: number; has_more: boolean}>("/eva/tasks?" + p);
   }
   evaProjects() { return this.request<{items: Record<string, unknown>[]}>("/eva/projects"); }
-  evaPeople() { return this.request<{items: Record<string, unknown>[]}>("/eva/people"); }
+  evaPeople(offset = 0) { return this.request<{items: Record<string, unknown>[]; has_more: boolean}>("/eva/people?offset=" + offset); }
   evaTask(code: string) { return this.request<Record<string, unknown>>("/eva/tasks/" + encodeURIComponent(code)); }
   createEvaTask(task: {name: string; text: string; project: string}) { return this.request<unknown>("/eva/tasks", "POST", task); }
   updateEvaTask(code: string, changes: Record<string, unknown>) { return this.request<unknown>("/eva/tasks/" + encodeURIComponent(code), "PATCH", changes); }
