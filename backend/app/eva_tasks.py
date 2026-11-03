@@ -145,7 +145,10 @@ def attach(user_dep, db_dep):
                 raise HTTPException(422, "Введи минимум два символа имени")
             if any(c in term for c in ("%", "_", chr(92))):
                 raise HTTPException(422, "Недопустимые символы поискового запроса")
-            kwargs["filter"] = ["name", "LIKE", "%" + term + "%"]
+            # Dotted usernames and email addresses are logins, not Person.name.
+            # A name-only LIKE silently hides users such as kirill.nechaev.
+            field = "login" if "." in term or "@" in term else "name"
+            kwargs["filter"] = [field, "LIKE", "%" + term + "%"]
         items = entries(invoke(key, "CmfPerson.list", kwargs=kwargs))
         return {"items": items, "has_more": len(items) == limit}
 
