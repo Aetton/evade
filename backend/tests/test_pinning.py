@@ -83,8 +83,8 @@ def test_pin_is_checked_before_sending_bearer(monkeypatch, tmp_path):
                                 received.append(data)
                                 if b"POST /api/" in data:
                                     payload = json.dumps({"jsonrpc": "2.2", "result": []}).encode()
-                                    sock.sendall(b"HTTP/1.1 200 OK\\r\\nContent-Length: " +
-                                                 str(len(payload)).encode() + b"\\r\\nConnection: close\\r\\n\\r\\n" + payload)
+                                    sock.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: " +
+                                                 str(len(payload)).encode() + b"\r\nConnection: close\r\n\r\n" + payload)
                     except (ssl.SSLError, ConnectionError, OSError):
                         pass
             except socket.timeout:
@@ -95,7 +95,7 @@ def test_pin_is_checked_before_sending_bearer(monkeypatch, tmp_path):
     server.start()
     monkeypatch.setenv("EVADE_EVA_URL", f"https://localhost:{port}/api/")
     expected = pin_store.inspect(cert)["sha256"]
-    pin_store.install(cert, "0" * 64 if False else expected)
+    pin_store.install(cert, expected)
     # Wrong pin is already validated on storage, so simulate an unrelated
     # HTTPS endpoint presenting a different certificate from our stored pin.
     other, other_key = leaf()
