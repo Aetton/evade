@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 def uid():
@@ -16,6 +16,15 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    eva_identity: Mapped["EvaIdentity | None"] = relationship(uselist=False)
+
+class EvaIdentity(Base):
+    __tablename__ = "eva_identities"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    person_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(512), nullable=False)
+    __table_args__ = (UniqueConstraint("endpoint", "person_id"),)
 
 class Project(Base):
     __tablename__ = "projects"

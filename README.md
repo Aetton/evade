@@ -48,7 +48,7 @@ npm install
 npm run tauri dev
 ```
 
-Enter `http://127.0.0.1:8000` and your personal token in the login screen.
+Enter the EvaDE API address and your personal **EvaTeam API token**. EvaDE asks the configured upstream for the token owner, then creates or updates a non-admin local profile keyed by upstream endpoint and Person ID. Configure EVADE_EVA_URL and EVADE_CREDENTIAL_KEY first. If the upstream cannot identify the owner, sign-in fails. Existing EvaDE users and bootstrap administrators can select local-token login. Same-origin web sessions survive refresh; the desktop session token stays in memory.
 
 For browser-only UI development (same React application):
 
@@ -105,7 +105,7 @@ just run
 just token
 ```
 
-The first run creates a private `.env` (database password and encryption key), starts PostgreSQL, FastAPI and an Nginx-hosted browser UI, and creates a first **EvaDE** admin account. Its API token is saved only in `.secrets/admin-token` (0600). Paste that token into the EvaDE login screen. These are **not** EvaTeam credentials: each user adds their own EvaTeam token via Settings.
+The first run creates a private `.env` (database password and encryption key), starts PostgreSQL, FastAPI and an Nginx-hosted browser UI, and creates a first **EvaDE** admin account. Its API token is saved only in `.secrets/admin-token` (0600). Select local-token login to use that administrator token. These are **not** EvaTeam credentials: each user adds their own EvaTeam token via Settings.
 
 - Browser UI (loopback only): http://127.0.0.1:8080
 - API docs: http://127.0.0.1:8000/docs

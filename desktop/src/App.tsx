@@ -12,6 +12,7 @@ function App() {
   const [api, setApi] = useState<Api | null>(null);
   const [restoringSession, setRestoringSession] = useState(true);
   const [server, setServer] = useState(API_URL);
+  const [localLogin, setLocalLogin] = useState(false);
   const [token, setToken] = useState("");
   const [me, setMe] = useState<User | null>(null);
   const [error, setError] = useState("");
@@ -162,8 +163,10 @@ function App() {
   async function login(e: FormEvent) {
     e.preventDefault(); setBusy(true); setError("");
     try {
-      const bearer = new Api(server, token);
-      const user = await bearer.me();
+      const entered = new Api(server, token.trim());
+      const result = localLogin ? null : await entered.request<{user: User; session: string}>("/auth/eva-login", "POST");
+      const bearer = result ? new Api(server, result.session) : entered;
+      const user = result?.user ?? await bearer.me();
       const sameOrigin = !isTauri() && new URL(server).origin === window.location.origin;
       if (sameOrigin) await bearer.openSession();
       setApi(sameOrigin ? new Api(server) : bearer);
@@ -177,7 +180,8 @@ function App() {
     <div className="brand brand-large"><span className="brand-icon"><img width="32" height="32" src="/favicon.svg" alt=""/></span><span>Eva<span className="brand-accent">DE</span></span></div>
     <p className="muted">Eva Desktop Edition. Из Рая выгнали. Зато задачи открываются.</p>
     <label>Адрес EvaDE<input type="url" required value={server} onChange={e => setServer(e.target.value)} placeholder="http://localhost:8000"/></label>
-    <label>Персональный токен EvaDE<input required type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="Вставь свой токен"/></label>
+    <label>{localLogin ? "Персональный токен EvaDE" : "API-токен EvaTeam"}<input required type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="Вставь свой токен"/></label>
+    <label><input type="checkbox" checked={localLogin} onChange={e=>{setLocalLogin(e.target.checked);setToken("");}}/> Вход по локальному токену EvaDE</label>
     <button className="primary" disabled={busy}>{busy ? "Подключаемся…" : "Войти"} <ArrowRight size={16}/></button>
     {error && <p className="error">{error}</p>}
     <small className="muted">Веб-версия сохраняет вход на 30 дней. Для доступа по сети используй HTTPS.</small>
@@ -194,7 +198,7 @@ function App() {
         <div className="profile"><span className="avatar">{me?.name.slice(0, 1).toUpperCase()}</span><span className="profile-name">{me?.name}</span><button title="Выйти" onClick={() => void logout()}><LogOut size={16}/></button></div>
       </div>
     </aside>
-    <main className="workspace"><EvaTasks api={api} userId={me?.id || ""}/></main>
+    <main className="workspace"><EvaTasks api={api} userId={me?.id || ""} personId={me?.eva_person_id} personName={me?.name}/></main>
     {showSettings && <div className="settings-backdrop" onClick={() => setShowSettings(false)}><section className="settings-panel card" onClick={e => e.stopPropagation()}>
       <div className="section-title"><h2>Настройки EvaDE</h2><button onClick={() => setShowSettings(false)} aria-label="Закрыть"><X size={18}/></button></div>
       <div className="detail-section"><p className="muted">Учётная запись: {me?.name} · Роль: {me?.is_admin ? "Администратор" : "Пользователь"}</p></div>

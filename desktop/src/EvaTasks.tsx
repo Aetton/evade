@@ -22,8 +22,9 @@ const projectId = (p: Row) => val(p.id);
 const projectCode = (p: Row) => val(p.code);
 const richText = (x: unknown) => val(x).replace(/<br\s*\/?\s*>/gi, "\n").replace(/<[^>]*>/g, "");
 
-export default function EvaTasks({ api, userId }: { api: Api; userId: string }) {
+export default function EvaTasks({ api, userId, personId, personName }: { api: Api; userId: string; personId?: string; personName?: string }) {
   const [self, setSelf] = useState<{id:string;name:string}|null>(() => {
+    if (personId) return {id: personId, name: personName || personId};
     try { return JSON.parse(localStorage.getItem("evade:eva-self:" + userId) || "null"); }
     catch { return null; }
   });
@@ -188,7 +189,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
 
   useEffect(() => {
     let active = true;
-    void api.evaSelf().then(identity => {
+    if (!personId) void api.evaSelf().then(identity => {
       if (active && identity.id) {
         setSelf({id: identity.id, name: identity.name || identity.id});
         setActivePerson(identity.id);
@@ -504,7 +505,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         <Star size={15}/> {managePeople ? "Закрыть выбор" : "Сотрудники"}
       </button>
     </div>
-    {self && managePeople && <button type="button" className="secondary-action" onClick={() => {
+    {!personId && self && managePeople && <button type="button" className="secondary-action" onClick={() => {
       if(!canLeave())return;
       setSelf(null); setActivePerson(""); setPage({items: [], offset: 0, limit: 50, has_more: false});
       setManagePeople(false);

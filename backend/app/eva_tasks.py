@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .credentials import retrieve as retrieve_credential
-from .models import EvaTaskCache, Task, SyncOutbox, ExternalLink
+from .models import EvaIdentity, EvaTaskCache, Task, SyncOutbox, ExternalLink
 from .eva_client import EvaError, call as eva_call
 
 router = APIRouter(prefix="/eva", tags=["EvaTeam tasks"])
@@ -25,6 +25,45 @@ def _user_context():
     # Late import prevents circular dependency with app.main.
     from .main import current_user, db_session
     return current_user, db_session
+
+
+def entries(data):
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for name in ("items", "rows", "data", "result"):
+            if isinstance(data.get(name), list):
+                return data[name]
+    raise HTTPException(502, "EvaTeam вернула неожиданный формат списка")
+
+
+def resolve_identity(key: str):
+    try:
+        data = eva_call(key, "User.getCurrentUser", kwargs={})
+    except EvaError as exc:
+        if exc.status == 422:
+            return {"id": None, "name": None, "requires_selection": True}
+        raise HTTPException(exc.status, "Не удалось связаться с EvaTeam для определения пользователя") from exc
+    if not isinstance(data, dict):
+        return {"id": None, "name": None, "requires_selection": True}
+    for candidate in (data.get("person"), data.get("person_id"), data.get("cmf_person"), data.get("id")):
+        person_id = candidate.get("id") if isinstance(candidate, dict) else candidate
+        if isinstance(person_id, str) and PERSON_ID.fullmatch(person_id):
+            return {"id": person_id, "name": (candidate.get("name") if isinstance(candidate, dict) else None) or data.get("name") or data.get("login") or person_id, "requires_selection": False}
+    login = data.get("login") or data.get("username")
+    if not isinstance(login, str) or not login.strip():
+        return {"id": None, "name": None, "requires_selection": True}
+    try:
+        matches = entries(eva_call(key, "CmfPerson.list", kwargs={
+            "filter": ["login", "==", login], "fields": ["id", "name", "login"], "slice": [0, 2]}))
+    except EvaError as exc:
+        if exc.status == 422:
+            return {"id": None, "name": None, "requires_selection": True}
+        raise HTTPException(exc.status, "Не удалось получить сотрудника EvaTeam") from exc
+    for person in matches if len(matches) == 1 else []:
+        if isinstance(person, dict) and isinstance(person.get("id"), str) and PERSON_ID.fullmatch(person["id"]) and person.get("login") == login:
+            return {"id": person["id"], "name": person.get("name") or login, "requires_selection": False}
+    return {"id": None, "name": None, "requires_selection": True}
 
 
 # Dependencies are installed by attach() after main.current_user exists.
@@ -49,15 +88,6 @@ def attach(user_dep, db_dep):
             raise HTTPException(422, "Некорректный код объекта EvaTeam")
         return value
 
-    def entries(data):
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict):
-            for name in ("items", "rows", "data", "result"):
-                if isinstance(data.get(name), list):
-                    return data[name]
-        raise HTTPException(502, "EvaTeam вернула неожиданный формат списка")
-
     def plain(data):
         if isinstance(data, dict):
             return data
@@ -72,36 +102,11 @@ def attach(user_dep, db_dep):
         return value
 
     @router.get("/me")
-    def own_eva_identity(key: str = Depends(token)):
-        # Some installations disable User.getCurrentUser for API tokens.
-        # This optional discovery must never block manual Person selection.
-        try:
-            data = eva_call(key, "User.getCurrentUser", kwargs={})
-        except EvaError as exc:
-            if exc.status == 422:
-                return {"id": None, "name": None, "requires_selection": True}
-            raise HTTPException(exc.status, "Не удалось связаться с EvaTeam для определения пользователя") from exc
-        if not isinstance(data, dict):
-            return {"id": None, "name": None, "requires_selection": True}
-        for candidate in (data.get("person"), data.get("person_id"), data.get("cmf_person"), data.get("id")):
-            person_id = candidate.get("id") if isinstance(candidate, dict) else candidate
-            if isinstance(person_id, str) and PERSON_ID.fullmatch(person_id):
-                return {"id": person_id, "name": data.get("name") or data.get("login") or person_id, "requires_selection": False}
-        login = data.get("login") or data.get("username")
-        if not isinstance(login, str) or not login.strip():
-            return {"id": None, "name": None, "requires_selection": True}
-        try:
-            matches = entries(eva_call(key, "CmfPerson.list", kwargs={
-                "filter": ["login", "==", login], "fields": ["id", "name", "login"], "slice": [0, 2]}))
-        except EvaError as exc:
-            if exc.status == 422:
-                return {"id": None, "name": None, "requires_selection": True}
-            raise HTTPException(exc.status, "Не удалось получить сотрудника EvaTeam") from exc
-        for person in matches:
-            if isinstance(person, dict) and isinstance(person.get("id"), str) and PERSON_ID.fullmatch(person["id"]):
-                return {"id": person["id"], "name": person.get("name") or login, "requires_selection": False}
-        return {"id": None, "name": None, "requires_selection": True}
-
+    def own_eva_identity(db: Session = Depends(db_dep), user=Depends(user_dep)):
+        identity = db.get(EvaIdentity, user.id)
+        if identity:
+            return {"id": identity.person_id, "name": user.name, "requires_selection": False}
+        return resolve_identity(token(db, user))
 
     def update_cache(db: Session, user_id: str, responsible: str, items: list) -> None:
         # Only snapshots from the authenticated caller's upstream token

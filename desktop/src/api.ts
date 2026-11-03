@@ -1,5 +1,5 @@
 export type Status = "new" | "in_progress" | "review" | "done";
-export type User = { id: string; name: string; is_admin: boolean };
+export type User = { id: string; name: string; is_admin: boolean; eva_person_id?: string };
 export type Project = { id: string; name: string };
 export type Task = {
   id: string; title: string; description: string; status: Status;

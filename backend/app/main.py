@@ -1,4 +1,6 @@
 import hashlib
+import secrets
+from sqlalchemy.exc import IntegrityError
 import os
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -8,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .database import Base, SessionLocal, engine
-from .models import Activity, Comment, EvaCredential, Project, SyncOutbox, Task, User, EvaTaskCache
+from .models import Activity, Comment, EvaIdentity, EvaCredential, Project, SyncOutbox, Task, User, EvaTaskCache
 from .credentials import store as store_eva_credential, retrieve as retrieve_eva_credential
 from .eva_client import EvaError, probe as probe_eva
 from .ca_store import CertificateError, install as install_ca, remove as remove_ca, status as ca_status, MAX_PEM_BYTES
@@ -45,6 +47,11 @@ def _user_by_bearer(authorization: str | None, db: Session) -> User:
 
 
 def current_user(request: Request, authorization: str | None = Header(default=None), db: Session = Depends(db_session)) -> User:
+    if authorization and authorization.startswith("Bearer session."):
+        user = web_session.verify(authorization[len("Bearer session."):], lambda uid: db.get(User, uid))
+        if user is None:
+            raise HTTPException(401, "Session expired or invalid")
+        return user
     if authorization:
         return _user_by_bearer(authorization, db)
     cookie = request.cookies.get(web_session.SESSION_COOKIE)
@@ -65,6 +72,39 @@ def current_user(request: Request, authorization: str | None = Header(default=No
             raise HTTPException(403, "Cross-origin cookie requests are not allowed")
     return user
 
+
+@app.post("/auth/eva-login")
+def eva_login(authorization: str | None = Header(default=None), db: Session = Depends(db_session)):
+    from .eva_tasks import resolve_identity
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Требуется API-токен EvaTeam")
+    key = authorization[7:].strip()
+    if not key or len(key) > 8192:
+        raise HTTPException(401, "Некорректный API-токен EvaTeam")
+    profile = resolve_identity(key)
+    if not profile["id"]:
+        raise HTTPException(403, "EvaTeam не подтвердила владельца токена через User.getCurrentUser")
+    endpoint = os.environ["EVADE_EVA_URL"].rstrip("/")
+    query = select(EvaIdentity).where(EvaIdentity.endpoint == endpoint, EvaIdentity.person_id == profile["id"])
+    for attempt in range(2):
+        identity = db.scalar(query)
+        if identity is None:
+            user = User(name=str(profile["name"])[:120], token_hash=secrets.token_hex(32), is_admin=False)
+            db.add(user)
+            db.flush()
+            db.add(EvaIdentity(user_id=user.id, endpoint=endpoint, person_id=profile["id"]))
+        else:
+            user = db.get(User, identity.user_id)
+            user.name = str(profile["name"])[:120]
+        try:
+            store_eva_credential(db, user.id, key)
+            db.commit()
+            break
+        except IntegrityError:
+            db.rollback()
+            if attempt:
+                raise
+    return {"user": as_user(user), "session": "session." + web_session.create(user)}
 
 @app.post("/auth/session")
 def create_web_session(response: Response, user: User = Depends(current_user)):
@@ -160,7 +200,12 @@ def eva_connection(db: Session = Depends(db_session), user: User = Depends(curre
 
 @app.put("/integrations/eva")
 def set_eva_connection(payload: EvaTokenIn, db: Session = Depends(db_session), user: User = Depends(current_user)):
-    # Deliberately does not try to validate against undocumented Eva auth.
+    identity = db.get(EvaIdentity, user.id)
+    if identity:
+        from .eva_tasks import resolve_identity
+        if (identity.endpoint != os.environ.get("EVADE_EVA_URL", "").rstrip("/") or
+                resolve_identity(payload.token)["id"] != identity.person_id):
+            raise HTTPException(403, "Токен принадлежит другой учётной записи EvaTeam")
     store_eva_credential(db, user.id, payload.token)
     db.commit()
     return {"connected": True}
@@ -213,7 +258,10 @@ class CommentIn(BaseModel):
     body: str = Field(min_length=1)
 
 def as_user(user: User):
-    return {"id": user.id, "name": user.name, "is_admin": user.is_admin}
+    data = {"id": user.id, "name": user.name, "is_admin": user.is_admin}
+    if user.eva_identity:
+        data["eva_person_id"] = user.eva_identity.person_id
+    return data
 
 def as_task(t: Task):
     return {key: getattr(t, key) for key in ("id", "title", "description", "status", "project_id", "parent_id", "priority", "assignee_id", "created_by", "created_at", "updated_at")}
