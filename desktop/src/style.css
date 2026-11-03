@@ -68,3 +68,9 @@
 .eva-status-group:not([open])>summary:before{content:"▸"}
 .eva-status-count{margin-left:auto;background:#3b3743;color:#d9cddc;padding:3px 8px;border-radius:99px;font-variant-numeric:tabular-nums;font-size:11px}
 .eva-status-group .eva-task-row:last-child{border-bottom:0!important}
+
+/* Accessible controlled status groups; the chosen state survives task refreshes. */
+.eva-status-heading{display:flex!important;align-items:center!important;gap:10px!important;width:100%!important;text-align:left!important;cursor:pointer!important;padding:13px 17px!important;background:#282832!important;color:#e9e8ef!important;font-size:13px!important;font-weight:700!important;border:0!important;border-radius:0!important}
+.eva-status-heading:hover{background:#32323e!important}
+.eva-status-heading .eva-status-arrow{width:12px;flex:0 0 12px;color:#9c91a3}
+.eva-status-heading:focus-visible{outline:2px solid #ee7182;outline-offset:-2px}

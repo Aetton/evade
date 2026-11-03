@@ -1,5 +1,6 @@
 import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Api } from "./api";
+import { groupEvaTasks } from "./evaStatus";
 import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star } from "lucide-react";
 
 type Row = Record<string, unknown>;
@@ -34,6 +35,10 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   const [managePeople, setManagePeople] = useState(false);
   const [peopleSearch, setPeopleSearch] = useState("");
 
+  const [collapsedStatuses, setCollapsedStatuses] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem("evade:eva-collapsed:" + userId) || "{}"); }
+    catch { return {}; }
+  });
   const [page, setPage] = useState<Page>({items: [], offset: 0, limit: 50, has_more: false});
   const [projects, setProjects] = useState<Row[]>([]);
   const [people, setPeople] = useState<Row[]>([]);
@@ -215,14 +220,15 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     finally { setSaving(false); }
   }
 
-  const statusGroups = new Map<string, Row[]>();
-  for (const item of page.items) {
-    const group = status(item).trim() || "Без статуса";
-    const rows = statusGroups.get(group) || [];
-    rows.push(item);
-    statusGroups.set(group, rows);
+  const groupedTasks = groupEvaTasks(page.items);
+  function toggleStatus(key: string) {
+    setCollapsedStatuses(current => {
+      const updated = {...current, [key]: !current[key]};
+      try { localStorage.setItem("evade:eva-collapsed:" + userId, JSON.stringify(updated)); }
+      catch { /* Storage may be disabled. */ }
+      return updated;
+    });
   }
-  const groupedTasks = [...statusGroups.entries()].sort(([a], [b]) => a.localeCompare(b, "ru"));
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div className="eva-workspace">
     <header className="eva-head">
@@ -290,13 +296,19 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     <div className="eva-layout">
       <section className="eva-list">
         <div className="eva-list-heading"><strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong><span>{loading ? "Загрузка…" : `Показано: ${page.items.length}`}</span></div>
-        {groupedTasks.map(([group, tasks]) => <details key={group} className="eva-status-group" open>
-          <summary><span>{group}</span><span className="eva-status-count">{tasks.length}</span></summary>
-          {tasks.map((t, i) => <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")} onClick={() => setSelected(taskCode(t))}>
-            <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
-            <span className="eva-row-meta">{val(t.responsible) || "Без исполнителя"}</span>
-          </button>)}
-        </details>)}
+        {groupedTasks.map(group => <section key={group.key} className="eva-status-group">
+          <button type="button" className="eva-status-heading" aria-expanded={!collapsedStatuses[group.key]}
+            onClick={() => toggleStatus(group.key)}>
+            <span className="eva-status-arrow">{collapsedStatuses[group.key] ? "▸" : "▾"}</span>
+            <span>{group.label}</span><span className="eva-status-count">{group.rows.length}</span>
+          </button>
+          {!collapsedStatuses[group.key] && group.rows.map((t, i) =>
+            <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
+              onClick={() => setSelected(taskCode(t))}>
+              <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
+              <span className="eva-row-meta">{val(t.responsible) || "Без исполнителя"}</span>
+            </button>)}
+        </section>)}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
         <div className="eva-pager"><button disabled={page.offset === 0 || loading} onClick={() => void loadList(Math.max(0, page.offset - 50))}><ChevronLeft size={15}/> Назад</button><span>{page.offset + 1}–{page.offset + page.items.length}</span><button disabled={!page.has_more || loading} onClick={() => void loadList(page.offset + 50)}>Далее <ChevronRight size={15}/></button></div>
       </section>
