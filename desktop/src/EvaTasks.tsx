@@ -208,7 +208,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       setManagePeople(false);
       try { localStorage.removeItem("evade:eva-self:" + userId); } catch { /* ignore */ }
     }}>Сменить мою учётку EvaTeam</button>}
-    {managePeople && <section className="eva-person-picker">
+    {self && managePeople && <section className="eva-person-picker">
       <input aria-label="Поиск сотрудников" placeholder="Найти сотрудника по имени или логину…"
         value={peopleSearch} onChange={e => setPeopleSearch(e.target.value)}/>
       <div className="eva-person-options">
