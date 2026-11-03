@@ -345,3 +345,9 @@ def add_comment(task_id: str, payload: CommentIn, db: Session = Depends(db_sessi
 def activity(task_id: str, db: Session = Depends(db_session), _: User = Depends(current_user)):
     task_or_404(db, task_id)
     return [{"id": a.id, "actor_id": a.actor_id, "kind": a.kind, "detail": a.detail, "created_at": a.created_at} for a in db.scalars(select(Activity).where(Activity.task_id == task_id).order_by(Activity.created_at))]
+
+
+# EvaTeam operations stay under a distinct namespace and always use the caller's own token.
+from .eva_tasks import router as eva_tasks_router, attach as attach_eva_tasks
+attach_eva_tasks(current_user, db_session)
+app.include_router(eva_tasks_router)
