@@ -20,7 +20,7 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [view, setView] = useState("mine");
+  const [view, setView] = useState("eva");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -284,8 +284,7 @@ function App() {
       <div className="brand"><span className="brand-icon"><Apple size={20}/></span><span>Eva<span className="brand-accent">DE</span></span></div>
       <nav>
         <button className={view === "eva" ? "nav-active" : ""} onClick={() => setView("eva")}><ListTodo size={17}/> EvaTeam · Задачи</button>
-        <button className={view === "mine" ? "nav-active" : ""} onClick={() => setView("mine")}><UserRound size={17}/> Мои задачи</button>
-        <button className={view === "all" ? "nav-active" : ""} onClick={() => setView("all")}><ListTodo size={17}/> Все задачи <span className="nav-count">{tasks.length}</span></button>
+        <button className={view === "mine" ? "nav-active" : ""} onClick={() => setView("mine")}><UserRound size={17}/> Локальные · мои</button>
         <button className={view === "inbox" ? "nav-active" : ""} onClick={() => setView("inbox")}><Inbox size={17}/> Без исполнителя</button>
       </nav>
       <div className="nav-label">ПРОЕКТЫ</div>
@@ -295,7 +294,7 @@ function App() {
         <div className="profile"><span className="avatar">{me?.name.slice(0, 1).toUpperCase()}</span><span className="profile-name">{me?.name}</span><button title="Выйти" onClick={() => void logout()}><LogOut size={16}/></button></div>
       </div>
     </aside>
-    {view === "eva" && api ? <main className="workspace"><EvaTasks api={api}/></main> : <main className="workspace">
+    {view === "eva" && api ? <main className="workspace"><EvaTasks api={api} userId={me?.id || ""}/></main> : <main className="workspace">
       <header className="topbar"><div><div className="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</div><h1>{view === "mine" ? "Мои задачи" : view === "all" ? "Все задачи" : view === "inbox" ? "Без исполнителя" : projects.find(p => "project:" + p.id === view)?.name || "Задачи"}</h1></div><div className="sync-state"><span className="sync-dot"/> Локальная база · {tasks.length} задач</div></header>
       <div className="toolbar"><div className="search-box"><Search size={17}/><input id="task-search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Найти задачу…"/><kbd>Ctrl K</kbd></div><span className="result-count">{visible.length} найдено</span></div>
       {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError("")}><X size={16}/></button></div>}

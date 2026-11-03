@@ -16,6 +16,10 @@ def test_eva_tasks_are_user_scoped_and_mutations_use_documented_methods(monkeypa
 
     def fake_call(key, method, *, kwargs=None, args=None):
         calls.append((key, method, kwargs, args))
+        if method == "User.getCurrentUser":
+            return {"id": "User:auth-a", "login": "evatester-a"}
+        if method == "CmfPerson.list":
+            return [{"id": "Person:own-1", "name": "Eva Tester A", "login": "evatester-a"}]
         if method == "CmfTask.list":
             return [{"code": "DEV-1", "name": "Task", "id": "abc", "parent_id": "project-id"}]
         if method == "CmfTask.get":
@@ -39,15 +43,20 @@ def test_eva_tasks_are_user_scoped_and_mutations_use_documented_methods(monkeypa
         auth_b = {"Authorization": "Bearer evatester-b"}
 
         assert client.get("/eva/tasks").status_code == 401
-        first = client.get("/eva/tasks?project=project-id&limit=50", headers=auth_a)
+        identity = client.get("/eva/me", headers=auth_a)
+        assert identity.status_code == 200, identity.text
+        assert identity.json()["id"] == "Person:own-1"
+        assert client.get("/eva/tasks", headers=auth_a).status_code == 422
+        first = client.get("/eva/tasks?responsible=Person:own-1&project=project-id&limit=50", headers=auth_a)
         assert first.status_code == 200, first.text
         assert first.json()["items"][0]["code"] == "DEV-1"
         assert calls[-1][0] == "eva-key-a"
         assert calls[-1][1] == "CmfTask.list"
-        assert calls[-1][2]["filter"] == ["parent_id", "==", "project-id"]
+        assert calls[-1][2]["filter"] == [["responsible", "==", "Person:own-1"], ["project_id", "==", "project-id"]]
         assert calls[-1][2]["slice"] == [0, 50]
 
-        assert client.get("/eva/tasks", headers=auth_b).status_code == 200
+        assert client.get("/eva/tasks?responsible=Person:other-2", headers=auth_b).status_code == 200
+        assert calls[-1][2]["filter"] == ["responsible", "==", "Person:other-2"]
         assert calls[-1][0] == "eva-key-b"
         assert client.get("/eva/tasks/DEV-1", headers=auth_a).status_code == 200
         assert calls[-1][1] == "CmfTask.get"
@@ -67,5 +76,6 @@ def test_eva_tasks_are_user_scoped_and_mutations_use_documented_methods(monkeypa
         assert calls[-1][2]["parent"] == "DEV-1"
         assert "&lt;script&gt;" in calls[-1][2]["text"]
         assert "<script>" not in calls[-1][2]["text"]
-        assert client.get("/eva/tasks?limit=101", headers=auth_a).status_code == 422
+        assert client.get("/eva/tasks?responsible=Person:own-1&limit=101", headers=auth_a).status_code == 422
+        assert client.get("/eva/tasks?responsible=bad", headers=auth_a).status_code == 422
         assert client.get("/eva/tasks/hello%20bad", headers=auth_a).status_code == 422

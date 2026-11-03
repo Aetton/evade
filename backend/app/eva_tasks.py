@@ -13,6 +13,8 @@ from .credentials import retrieve as retrieve_credential
 from .eva_client import EvaError, call as eva_call
 
 router = APIRouter(prefix="/eva", tags=["EvaTeam tasks"])
+PERSON_ID = re.compile(r"^(?:Person|CmfPerson):[a-zA-Z0-9_-]{1,100}$")
+PROJECT_ID = re.compile(r"^(?:(?:CmfProject|Project):)?[a-zA-Z0-9_.-]{1,100}$")
 TASK_CODE = re.compile(r"^[\w.-]{1,100}$", re.UNICODE)
 
 
@@ -60,17 +62,48 @@ def attach(user_dep, db_dep):
             return data[0]
         raise HTTPException(502, "EvaTeam вернула неожиданный формат карточки")
 
+
+    def person_ok(value: str) -> str:
+        if not PERSON_ID.fullmatch(value):
+            raise HTTPException(422, "Выбери исполнителя из списка EvaTeam")
+        return value
+
+    @router.get("/me")
+    def own_eva_identity(key: str = Depends(token)):
+        data = invoke(key, "User.getCurrentUser", kwargs={})
+        if not isinstance(data, dict):
+            raise HTTPException(502, "EvaTeam не вернула профиль пользователя")
+        for candidate in (data.get("person"), data.get("person_id"), data.get("cmf_person"), data.get("id")):
+            person_id = candidate.get("id") if isinstance(candidate, dict) else candidate
+            if isinstance(person_id, str) and PERSON_ID.fullmatch(person_id):
+                return {"id": person_id, "name": data.get("name") or data.get("login") or person_id}
+        login = data.get("login") or data.get("username")
+        if not isinstance(login, str) or not login.strip():
+            raise HTTPException(502, "EvaTeam не вернула Person ID или логин текущего пользователя")
+        matches = entries(invoke(key, "CmfPerson.list", kwargs={
+            "filter": ["login", "==", login], "fields": ["id", "name", "login"], "slice": [0, 2]}))
+        for person in matches:
+            if isinstance(person, dict) and isinstance(person.get("id"), str) and PERSON_ID.fullmatch(person["id"]):
+                return {"id": person["id"], "name": person.get("name") or login}
+        raise HTTPException(502, "Не удалось сопоставить пользователя EvaTeam с исполнителем")
+
     @router.get("/tasks")
     def list_tasks(
         offset: int = Query(0, ge=0),
         limit: int = Query(50, ge=1, le=100),
         project: str | None = Query(None, max_length=100),
+        responsible: str = Query(..., min_length=1, max_length=150),
         search: str = Query("", max_length=200),
         key: str = Depends(token),
     ):
-        kwargs = {"slice": [offset, offset + limit], "fields": ["*"], "order_by": ["-cmf_created_at"]}
+        filters = [["responsible", "==", person_ok(responsible)]]
         if project:
-            kwargs["filter"] = ["parent_id", "==", code_ok(project)]
+            if not PROJECT_ID.fullmatch(project):
+                raise HTTPException(422, "Некорректный ID проекта EvaTeam")
+            filters.append(["project_id", "==", project])
+        kwargs = {"slice": [offset, offset + limit],
+                  "fields": ["id", "code", "name", "responsible", "status", "priority", "cmf_created_at"],
+                  "order_by": ["-cmf_created_at"], "filter": filters[0] if len(filters) == 1 else filters}
         data = entries(invoke(key, "CmfTask.list", kwargs=kwargs))
         has_more = len(data) == limit
         if search:
@@ -92,7 +125,8 @@ def attach(user_dep, db_dep):
         limit: int = Query(100, ge=1, le=100),
         key: str = Depends(token),
     ):
-        return {"items": entries(invoke(key, "CmfPerson.list", kwargs={"slice": [offset, offset + limit], "fields": ["*"]}))}
+        items = entries(invoke(key, "CmfPerson.list", kwargs={"slice": [offset, offset + limit], "fields": ["id", "name", "login", "email"]}))
+        return {"items": items, "has_more": len(items) == limit}
 
     @router.get("/tasks/{code}")
     def task_detail(code: str, key: str = Depends(token)):

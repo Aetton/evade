@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Api } from "./api";
-import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star } from "lucide-react";
 
 type Row = Record<string, unknown>;
 type Page = { items: Row[]; offset: number; limit: number; has_more: boolean };
@@ -19,10 +19,23 @@ const projectId = (p: Row) => val(p.id);
 const projectCode = (p: Row) => val(p.code);
 const richText = (x: unknown) => val(x).replace(/<br\s*\/?\s*>/gi, "\n").replace(/<[^>]*>/g, "");
 
-export default function EvaTasks({ api }: { api: Api }) {
+export default function EvaTasks({ api, userId }: { api: Api; userId: string }) {
+  const [self, setSelf] = useState<{id:string;name:string}|null>(null);
+  const [activePerson, setActivePerson] = useState("");
+  const [followed, setFollowed] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("evade:eva-team:" + userId) || "[]");
+      return Array.isArray(saved) ? saved.filter((v: unknown) => typeof v === "string") : [];
+    } catch { return []; }
+  });
+  const [managePeople, setManagePeople] = useState(false);
+  const [peopleSearch, setPeopleSearch] = useState("");
+
   const [page, setPage] = useState<Page>({items: [], offset: 0, limit: 50, has_more: false});
   const [projects, setProjects] = useState<Row[]>([]);
   const [people, setPeople] = useState<Row[]>([]);
+  const [peopleHasMore, setPeopleHasMore] = useState(false);
+  const [peopleLoading, setPeopleLoading] = useState(false);
   const [project, setProject] = useState("");
   const [search, setSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
@@ -44,10 +57,10 @@ export default function EvaTasks({ api }: { api: Api }) {
 
   const loadList = useCallback(async (offset = 0) => {
     setLoading(true); setError("");
-    try { setPage(await api.evaTasks(offset, 50, project, search)); }
+    try { if (activePerson) setPage(await api.evaTasks(activePerson, offset, 50, project, search)); }
     catch (e) { setError(String(e)); }
     finally { setLoading(false); }
-  }, [api, project, search]);
+  }, [api, activePerson, project, search]);
 
   const loadTask = useCallback(async (code: string) => {
     if (!code) return;
@@ -61,12 +74,42 @@ export default function EvaTasks({ api }: { api: Api }) {
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.evaProjects(), api.evaPeople()]).then(([p, u]) => {
-      if (active) { setProjects(p.items); setPeople(u.items); }
+    void api.evaSelf().then(identity => {
+      if (active) { setSelf(identity); setActivePerson(identity.id); }
+    }).catch(e => { if (active) setError("Не удалось определить пользователя EvaTeam: " + String(e)); });
+    void api.evaProjects().then(p => { if (active) setProjects(p.items); })
+      .catch(e => { if (active) setError(String(e)); });
+    void api.evaPeople().then(p => {
+      if (active) { setPeople(p.items); setPeopleHasMore(p.has_more); }
     }).catch(e => { if (active) setError(String(e)); });
     return () => { active = false; };
   }, [api]);
-  useEffect(() => { void loadList(0); }, [loadList]);
+  useEffect(() => {
+    if (activePerson) { setSelected(""); void loadList(0); }
+  }, [activePerson, loadList]);
+  useEffect(() => {
+    try { localStorage.setItem("evade:eva-team:" + userId, JSON.stringify(followed)); }
+    catch { /* Storage may be disabled. */ }
+  }, [userId, followed]);
+  async function loadMorePeople() {
+    if (!peopleHasMore || peopleLoading) return;
+    setPeopleLoading(true);
+    try {
+      const result = await api.evaPeople(people.length);
+      setPeople(current => [...current, ...result.items.filter(p => !current.some(c => val(c.id) === val(p.id)))]);
+      setPeopleHasMore(result.has_more);
+    } catch (e) { setError(String(e)); }
+    finally { setPeopleLoading(false); }
+  }
+  function toggleFollow(id: string) {
+    if (id === self?.id) return;
+    setFollowed(current => current.includes(id) ? current.filter(v => v !== id) : [...current, id]);
+    if (activePerson === id && followed.includes(id)) setActivePerson(self?.id || "");
+  }
+  const nameFor = (id: string) => val(people.find(p => val(p.id) === id)?.name) || id;
+  const availablePeople = people.filter(p => val(p.id) !== self?.id &&
+    (val(p.name) + " " + val(p.login) + " " + val(p.email)).toLowerCase().includes(peopleSearch.toLowerCase()));
+
   useEffect(() => {
     setTask(null);
     if (selected) void loadTask(selected);
@@ -118,9 +161,36 @@ export default function EvaTasks({ api }: { api: Api }) {
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div className="eva-workspace">
     <header className="eva-head">
-      <div><small>ПЕРСОНАЛЬНОЕ ПОДКЛЮЧЕНИЕ · EVATEAM</small><h1>Задачи EvaTeam</h1></div>
-      <button className="secondary-action" onClick={() => void loadList(page.offset)} disabled={loading}><RefreshCw size={15}/> Обновить</button>
+      <div><small>ПЕРСОНАЛЬНОЕ ПОДКЛЮЧЕНИЕ · EVATEAM</small><h1>{activePerson === self?.id ? "Мои задачи" : "Задачи · " + nameFor(activePerson)}</h1></div>
+      <button className="secondary-action" onClick={() => void loadList(page.offset)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
     </header>
+    <div className="eva-person-tabs">
+      <button type="button" className={activePerson === self?.id ? "active" : ""} disabled={!self}
+        onClick={() => setActivePerson(self?.id || "")}><UserRound size={15}/> Мои задачи</button>
+      {followed.map(id => <button type="button" key={id} className={activePerson === id ? "active" : ""}
+        onClick={() => setActivePerson(id)}><Users size={15}/>{nameFor(id)}</button>)}
+      <button type="button" className="eva-manage-people" onClick={() => setManagePeople(v => !v)}>
+        <Star size={15}/> {managePeople ? "Закрыть выбор" : "Сотрудники"}
+      </button>
+    </div>
+    {managePeople && <section className="eva-person-picker">
+      <input aria-label="Поиск сотрудников" placeholder="Найти сотрудника по имени или логину…"
+        value={peopleSearch} onChange={e => setPeopleSearch(e.target.value)}/>
+      <div className="eva-person-options">
+        {availablePeople.map((p, i) => {
+          const id = val(p.id);
+          return <label key={id || i}><input type="checkbox" checked={followed.includes(id)}
+            disabled={!id} onChange={() => toggleFollow(id)}/>
+            <span>{val(p.name) || val(p.login) || id}<small>{val(p.login)}</small></span>
+          </label>;
+        })}
+        {!availablePeople.length && <p className="muted">Сотрудники не найдены в загруженном справочнике.</p>}
+      </div>
+      {peopleHasMore && <button type="button" disabled={peopleLoading} onClick={() => void loadMorePeople()}>
+        {peopleLoading ? "Загружаю…" : "Загрузить ещё сотрудников"}
+      </button>}
+      <p className="muted">Закреплённые сотрудники доступны отдельными вкладками. Список сохраняется в этом браузере.</p>
+    </section>}
     <div className="eva-controls">
       <select value={project} onChange={e => {setProject(e.target.value);setSelected("");}}>
         <option value="">Все доступные проекты</option>
@@ -140,12 +210,12 @@ export default function EvaTasks({ api }: { api: Api }) {
     </form>}
     <div className="eva-layout">
       <section className="eva-list">
-        <div className="eva-list-heading"><strong>Задачи</strong><span>{loading ? "Загрузка…" : `Показано: ${page.items.length}`}</span></div>
+        <div className="eva-list-heading"><strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong><span>{loading ? "Загрузка…" : `Показано: ${page.items.length}`}</span></div>
         {page.items.map((t, i) => <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")} onClick={() => setSelected(taskCode(t))}>
           <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
           <span className="eva-row-meta">{val(t.status)} · {val(t.responsible) || "Без исполнителя"}</span>
         </button>)}
-        {!loading && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
+        {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
         <div className="eva-pager"><button disabled={page.offset === 0 || loading} onClick={() => void loadList(Math.max(0, page.offset - 50))}><ChevronLeft size={15}/> Назад</button><span>{page.offset + 1}–{page.offset + page.items.length}</span><button disabled={!page.has_more || loading} onClick={() => void loadList(page.offset + 50)}>Далее <ChevronRight size={15}/></button></div>
       </section>
       <section className="eva-editor">
