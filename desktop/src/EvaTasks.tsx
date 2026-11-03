@@ -2,7 +2,7 @@ import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "re
 import { Api } from "./api";
 import { groupEvaTasks } from "./evaStatus";
 import { buildProjectTree, ProjectTreeNode, SectionGroup } from "./evaProjects";
-import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star, Cloud, CloudOff, AlertTriangle, Clock } from "lucide-react";
+import { ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star, Cloud, CloudOff, AlertTriangle, Clock } from "lucide-react";
 
 type Row = Record<string, unknown>;
 type Page = { items: Row[]; offset: number; limit: number; has_more: boolean };
@@ -83,14 +83,22 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     try {
       if (activePerson) {
         const remote = await api.evaTasks(activePerson, offset, 50, project, search);
-        setPage(remote); setOfflineCache(false);
+        setPage(prev => offset === 0 ? {...remote, offset: 0} : {
+          ...remote, offset: 0,
+          items: [...prev.items, ...remote.items.filter(item => !prev.items.some(old =>
+            val(old.id) === val(item.id) || Boolean(taskCode(item) && taskCode(old) === taskCode(item)))],
+        });
+        setOfflineCache(false);
         setLastSync(new Date());
       }
     } catch (e) {
       try {
         const cached = await api.evaCachedTasks(activePerson, offset, 50);
         // Offline cache isn't filtered by project/search: never pretend it is.
-        setPage(cached); setOfflineCache(true);
+        setPage(prev => offset === 0 ? {...cached, offset: 0} : {
+          ...cached, offset: 0, items: [...prev.items, ...cached.items.filter(item =>
+            !prev.items.some(old => val(old.id) === val(item.id)))],
+        }); setOfflineCache(true);
         setError("EvaTeam недоступна. Показан последний сохранённый снимок задач (без фильтра проекта и поиска). Редактирование временно отключено. " + String(e));
       } catch { setError(String(e)); }
     }
@@ -263,7 +271,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       if (!Object.keys(changes).length) { setMessage("Нет изменений"); return; }
       await api.updateEvaTask(selected, changes);
       setMessage("Изменения сохранены в EvaTeam.");
-      await Promise.all([loadTask(selected), loadList(page.offset)]);
+      await Promise.all([loadTask(selected), loadList(0)]);
     } catch (err) { setError(String(err)); }
     finally { setSaving(false); }
   }
@@ -366,7 +374,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       </div>
       <div className="eva-head-actions">
         <button className="secondary-action" onClick={() => void runSync()} disabled={syncBusy || !activePerson}><RefreshCw size={15} className={syncBusy ? "spin" : ""}/> Синхронизировать</button>
-        <button className="secondary-action" onClick={() => void loadList(page.offset)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
+        <button className="secondary-action" onClick={() => void loadList(0)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
       </div>
     </header>
     {syncState && (syncState.legacy_tasks > 0 || syncState.legacy_outbox_pending > 0) &&
@@ -453,7 +461,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
           ? projectTree.map(node => projectSection(node))
           : groupedTasks.map(group => statusSection(group, "root"))}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
-        <div className="eva-pager"><button disabled={page.offset === 0 || loading} onClick={() => void loadList(Math.max(0, page.offset - 50))}><ChevronLeft size={15}/> Назад</button><span>{page.offset + 1}–{page.offset + page.items.length}</span><button disabled={!page.has_more || loading} onClick={() => void loadList(page.offset + 50)}>Далее <ChevronRight size={15}/></button></div>
+        <div className="eva-pager"><span>Загружено задач: {page.items.length}</span>{page.has_more && <button disabled={loading} onClick={() => void loadList(page.items.length)}>{loading ? "Загрузка…" : "Загрузить ещё"} <ChevronRight size={15}/></button>}</div>
       </section>
       <section className="eva-editor">
         {!task ? <p className="muted eva-empty">Выбери задачу для просмотра и редактирования.</p> : <>
