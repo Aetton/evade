@@ -26,6 +26,7 @@ services:
       EVADE_CREDENTIAL_KEY: ${EVADE_CREDENTIAL_KEY:?Run 'just run' first}
       EVADE_EVA_URL: ${EVADE_EVA_URL:-}
       EVADE_CA_FILE: /var/lib/evade/certs/eva-ca.pem
+      EVADE_COOKIE_SECURE: ${EVADE_COOKIE_SECURE:-false}
       EVADE_BUILD_SHA: ${EVADE_BUILD_SHA:-local}
     volumes:
       - evade-certs:/var/lib/evade/certs
