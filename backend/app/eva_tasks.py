@@ -3,6 +3,8 @@
 No remote tasks are copied into the shared local Task table. Every call uses
 the authenticated caller's own encrypted EvaTeam bearer token.
 """
+from heapq import merge
+from itertools import islice
 import html
 import re
 from datetime import datetime, timezone
@@ -117,30 +119,44 @@ def attach(user_dep, db_dep):
             remote_id = item.get("id") or item.get("code")
             if not isinstance(remote_id, str) or not remote_id:
                 continue
-            existing = db.scalar(select(EvaTaskCache).where(
-                EvaTaskCache.user_id == user_id, EvaTaskCache.remote_id == remote_id))
-            if existing is None:
-                db.add(EvaTaskCache(user_id=user_id, remote_id=remote_id,
-                                    responsible_id=responsible, snapshot=item))
+            # Different assignee tabs can fetch the same task concurrently.
+            if db.get_bind().dialect.name == "postgresql":
+                from sqlalchemy.dialects.postgresql import insert
             else:
-                existing.snapshot = item
-                existing.responsible_id = responsible
-                existing.fetched_at = datetime.now(timezone.utc)
+                from sqlalchemy.dialects.sqlite import insert
+            stmt = insert(EvaTaskCache).values(user_id=user_id, remote_id=remote_id,
+                                               responsible_id=responsible, snapshot=item)
+            db.execute(stmt.on_conflict_do_update(index_elements=["user_id", "remote_id"],
+                set_={"snapshot": item, "responsible_id": responsible, "fetched_at": datetime.now(timezone.utc)}))
         db.commit()
 
-    def fetch_person_page(key: str, responsible: str, offset: int, limit: int, project: str | None = None) -> list:
-        filters = [["responsible", "==", person_ok(responsible)]]
-        if project:
-            if not PROJECT_ID.fullmatch(project):
-                raise HTTPException(422, "Некорректный ID проекта EvaTeam")
-            filters.append(["project_id", "==", project])
-        kwargs = {"slice": [offset, offset + limit],
-                  "fields": ["id", "code", "name", "responsible", "status",
-                             "status_id", "cache_status_type", "priority", "lists", "parent_task_id", "parent_id",
-                             "project_id", "cmf_modified_at", "cmf_created_at"],
-                  "order_by": ["-cmf_created_at"],
-                  "filter": filters[0] if len(filters) == 1 else filters}
-        return entries(invoke(key, "CmfTask.list", kwargs=kwargs))
+    def person_tasks(key: str, responsible: str, page_size: int, project: str | None = None):
+        person_ok(responsible)
+        if project and not PROJECT_ID.fullmatch(project):
+            raise HTTPException(422, "Некорректный ID проекта EvaTeam")
+        fields = ["id", "code", "name", "responsible", "executors", "status", "status_id",
+                  "cache_status_type", "priority", "lists", "parent_task_id", "parent_id",
+                  "project_id", "cmf_modified_at", "cmf_created_at"]
+        def stream(role):
+            condition = [role, "==", responsible]
+            filters = [condition, ["project_id", "==", project]] if project else condition
+            start = 0
+            while True:
+                rows = entries(invoke(key, "CmfTask.list", kwargs={
+                    "fields": fields, "slice": [start, start + page_size],
+                    "filter": filters, "order_by": ["-cmf_created_at", "-id"]}))
+                yield from rows
+                if len(rows) < page_size:
+                    return
+                start += len(rows)
+
+        seen = set()
+        for row in merge(stream("responsible"), stream("executors.id"), reverse=True,
+                         key=lambda r: (r.get("cmf_created_at") or "", r.get("id") or r["code"])):
+            identity = row.get("id") or row["code"]
+            if identity not in seen:
+                seen.add(identity)
+                yield row
 
     @router.get("/sync/status")
     def sync_status(db: Session = Depends(db_dep), user=Depends(user_dep),
@@ -164,8 +180,9 @@ def attach(user_dep, db_dep):
         partial = []
         for person in people:
             offset = 0
+            stream = person_tasks(key, person, 100)
             while offset < 2000:
-                rows = fetch_person_page(key, person, offset, 100)
+                rows = list(islice(stream, 100))
                 update_cache(db, user.id, person, rows)
                 synced += len(rows)
                 offset += len(rows)
@@ -181,9 +198,21 @@ def attach(user_dep, db_dep):
                      limit: int = Query(50, ge=1, le=100),
                      db: Session = Depends(db_dep), user=Depends(user_dep)):
         person_ok(responsible)
-        stmt = select(EvaTaskCache).where(EvaTaskCache.user_id == user.id,
-                                          EvaTaskCache.responsible_id == responsible)
-        rows = list(db.scalars(stmt.order_by(EvaTaskCache.fetched_at.desc()).offset(offset).limit(limit + 1)))
+        stmt = select(EvaTaskCache).where(EvaTaskCache.user_id == user.id)
+        rows = []
+        skipped = 0
+        for row in db.scalars(stmt.order_by(EvaTaskCache.fetched_at.desc(), EvaTaskCache.id)):
+            snapshot = row.snapshot
+            members = [snapshot.get("responsible"), *(snapshot.get("executors") or [])]
+            ids = {v.get("id") if isinstance(v, dict) else v for v in members if v}
+            if responsible not in ids and row.responsible_id != responsible:
+                continue
+            if skipped < offset:
+                skipped += 1
+                continue
+            rows.append(row)
+            if len(rows) > limit:
+                break
         return {"items": [row.snapshot for row in rows[:limit]], "offset": offset, "limit": limit,
                 "has_more": len(rows) > limit, "cached": True}
 
@@ -198,7 +227,7 @@ def attach(user_dep, db_dep):
         db: Session = Depends(db_dep),
         user=Depends(user_dep),
     ):
-        data = fetch_person_page(key, responsible, offset, limit, project)
+        data = list(islice(person_tasks(key, responsible, limit, project), offset, offset + limit))
         update_cache(db, user.id, responsible, data)
         has_more = len(data) == limit
         if search:
