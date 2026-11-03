@@ -2,7 +2,7 @@ import EvaTasks from "./EvaTasks";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Api, User } from "./api";
 import { isTauri } from "@tauri-apps/api/core";
-import { Apple, ArrowRight, ListTodo, LogOut, Settings2, X } from "lucide-react";
+import { ArrowRight, ListTodo, LogOut, Settings2, X } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL ||
   (window.location.protocol.startsWith("http") && window.location.port !== "1420"
@@ -174,7 +174,7 @@ function App() {
 
   if (restoringSession) return <div className="login-wrap"><p className="muted">Восстанавливаем вход…</p></div>;
   if (!api) return <div className="login-wrap"><form className="login card" onSubmit={login}>
-    <div className="brand brand-large"><span className="brand-icon"><Apple size={27}/></span><span>Eva<span className="brand-accent">DE</span></span></div>
+    <div className="brand brand-large"><span className="brand-icon"><img width="32" height="32" src="/favicon.svg" alt=""/></span><span>Eva<span className="brand-accent">DE</span></span></div>
     <p className="muted">Eva Desktop Edition. Из Рая выгнали. Зато задачи открываются.</p>
     <label>Адрес EvaDE<input type="url" required value={server} onChange={e => setServer(e.target.value)} placeholder="http://localhost:8000"/></label>
     <label>Персональный токен EvaDE<input required type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="Вставь свой токен"/></label>
@@ -185,7 +185,7 @@ function App() {
 
   return <div className="shell evade-unified">
     <aside className="sidebar">
-      <div className="brand"><span className="brand-icon"><Apple size={20}/></span><span>Eva<span className="brand-accent">DE</span></span></div>
+      <div className="brand"><span className="brand-icon"><img width="32" height="32" src="/favicon.svg" alt=""/></span><span>Eva<span className="brand-accent">DE</span></span></div>
       <nav><div className="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
         <button className="nav-active"><ListTodo size={17}/> Задачи</button>
       </nav>

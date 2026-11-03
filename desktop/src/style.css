@@ -173,3 +173,34 @@
 .eva-workspace button svg {flex-shrink:0;vertical-align:middle}
 .eva-comment p,.eva-editor-heading h3 {overflow-wrap:anywhere}
 @media(max-width:740px){.eva-layout{grid-template-columns:minmax(0,1fr)} .eva-edit-grid{grid-template-columns:minmax(0,1fr)}}
+
+:root{--lab-bg:#101216;--lab-side:#15171d;--lab-pane:#191c22;--lab-panel:#222730;--lab-line:#303640;--lab-text:#eef1f5;--lab-muted:#99a4b5;--lab-accent:#f27b93;--lab-active:#412934}
+:root[data-theme=oxide]{--lab-bg:#111318;--lab-side:#171a21;--lab-pane:#1c2029;--lab-panel:#292f3d;--lab-line:#394151;--lab-accent:#8ba9ff;--lab-active:#2b395a}
+:root[data-theme=paper]{--lab-bg:#f6f6f3;--lab-side:#eeefec;--lab-pane:#fcfcfa;--lab-panel:#f4f4f1;--lab-line:#dedfd9;--lab-text:#222832;--lab-muted:#606b77;--lab-accent:#bc526f;--lab-active:#f9e8ec}
+.evade-unified .sidebar{background:var(--lab-side);color:var(--lab-text);border-color:var(--lab-line)}
+.evade-unified .workspace{background:var(--lab-bg);min-width:0}
+.evade-unified .lab-shell{display:grid;grid-template-columns:minmax(0,1fr) clamp(320px,30vw,450px);height:100dvh;min-height:0;padding:0;max-width:none;color:var(--lab-text)}
+.lab-center,.lab-shell .eva-editor{min-width:0;overflow:auto}
+.lab-center{display:flex;flex-direction:column}
+.lab-center>*{flex-shrink:0}
+.evade-unified .lab-shell .eva-head{margin:0;padding:20px 22px 10px;align-items:center;flex-wrap:wrap}
+.evade-unified .lab-shell .eva-head h1{font-size:25px}
+.evade-unified .lab-shell .eva-person-tabs,.lab-shell .eva-summary-strip{margin:6px 20px;flex-wrap:wrap}
+.evade-unified .lab-shell .eva-controls{margin:0;padding:10px 20px;background:transparent;border:0}
+.lab-shell .eva-controls select{max-width:100%}
+.evade-unified .lab-shell .eva-layout{display:block;flex:1 0 180px;overflow:auto;min-height:0;padding:8px 12px}
+.evade-unified .lab-shell :is(.eva-editor,.eva-list){border:0;border-radius:0;box-shadow:none}
+.evade-unified .lab-shell .eva-editor{background:var(--lab-pane);border-left:1px solid var(--lab-line);height:100%;min-height:0}
+.evade-unified .lab-shell .eva-list{background:transparent}
+.lab-shell :is(.eva-project-heading,.eva-project-section-heading,.eva-list-heading,.eva-editor-heading,.eva-group-switch,.eva-status-heading,.eva-summary-stat,.eva-controls select,.eva-controls input,.eva-edit-form input,.eva-edit-form textarea,.eva-editor select,.eva-comments textarea,.secondary-action,.eva-person-tabs button,.eva-group-switch button,.eva-controls button,.eva-pager button,.eva-project-group,.eva-status-count,.lab-options select){background:var(--lab-panel)!important;color:var(--lab-text)!important;border-color:var(--lab-line)!important}
+.lab-shell :is(.eva-task-open,.eva-task-row){color:var(--lab-text)!important}
+.lab-shell :is(.eva-person-tabs,.eva-group-switch) button.active,.lab-shell [aria-pressed=true],.lab-shell .eva-task-node.active{background:var(--lab-active)!important;color:var(--lab-text)!important}
+.lab-shell .eva-task-node:hover{background:var(--lab-panel)}
+.lab-shell .eva-task-node,.lab-shell .eva-project-section{border-color:var(--lab-line)}
+.lab-options{display:flex;flex-wrap:wrap;gap:14px;padding:10px 20px;background:var(--lab-pane);border-top:1px solid var(--lab-line);color:var(--lab-muted);font-size:12px}
+.lab-options select{padding:4px 8px}
+.lab-board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(190px,1fr);overflow:auto;gap:8px;padding:10px}
+.lab-board section{background:var(--lab-pane);padding:10px;border-radius:8px}
+.lab-board h3{font-size:12px}.lab-board button{display:grid;text-align:left;gap:5px;width:100%;margin-bottom:6px;background:var(--lab-panel);color:var(--lab-text);border-color:var(--lab-line)}
+.lab-shell[data-compact=true] :is(.eva-task-open,.eva-task-row){padding-top:5px!important;padding-bottom:5px!important}
+@media(max-width:900px){.evade-unified .lab-shell{grid-template-columns:minmax(0,1fr)}.lab-shell .eva-editor{display:none}.lab-shell .eva-editor[data-selected=true]{display:block;position:fixed;inset:0;z-index:4}}
