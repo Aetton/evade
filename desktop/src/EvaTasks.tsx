@@ -83,10 +83,11 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     try {
       if (activePerson) {
         const remote = await api.evaTasks(activePerson, offset, 50, project, search);
-        setPage(prev => offset === 0 ? {...remote, offset: 0} : {
-          ...remote, offset: 0,
-          items: [...prev.items, ...remote.items.filter(item => !prev.items.some(old =>
-            val(old.id) === val(item.id) || Boolean(taskCode(item) && taskCode(old) === taskCode(item)))],
+        setPage(prev => {
+          if (offset === 0) return {...remote, offset: 0};
+          const existing = new Set(prev.items.map(item => val(item.id) || taskCode(item)));
+          const added = remote.items.filter(item => !existing.has(val(item.id) || taskCode(item)));
+          return {...remote, offset: 0, items: [...prev.items, ...added]};
         });
         setOfflineCache(false);
         setLastSync(new Date());
