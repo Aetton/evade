@@ -111,6 +111,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     if (childParent) childDialog.current?.showModal();
     else childDialog.current?.close();
   }, [childParent]);
+  const [createProject, setCreateProject] = useState("");
   const [newTask, setNewTask] = useState(false);
   const [newName, setNewName] = useState("");
   const [newText, setNewText] = useState("");
@@ -383,11 +384,11 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
   async function create(e: FormEvent) {
     e.preventDefault();
     if (offlineCache) return;
-    const p = projects.find(x => projectId(x) === project);
+    const p = projects.find(x => projectId(x) === (createProject || project) || projectCode(x) === createProject && !!createProject);
     if (!p || !newName.trim()) return;
     setSaving(true); setError(""); setMessage("");
     try {
-      await api.createEvaTask({name: newName.trim(), text: newText, project: projectCode(p)});
+      await api.createEvaTask({name: newName.trim(), text: newText, project: projectCode(p), responsible: activePerson || undefined});
       setNewName(""); setNewText(""); setNewTask(false); setMessage("Задача создана в EvaTeam.");
       await loadList(0);
     } catch (err) { setError(String(err)); }
@@ -527,12 +528,13 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     const key = "project:" + node.id;
     const collapsed = collapsedStatuses[key] ?? (node.count === 0);
     return <section className="eva-project-group" key={key}>
-      <button type="button" className="eva-project-heading" style={{paddingLeft: 16 + level * 13}}
+      <div style={{display:"flex",alignItems:"center"}}><button type="button" className="eva-project-heading" style={{paddingLeft: 16 + level * 13}}
         aria-expanded={!collapsed} title={node.path} onClick={() => toggleStatus(key, node.count === 0)}>
         <span className="eva-status-arrow">{<ChevronRight size={15} style={{transform: collapsed ? undefined : "rotate(90deg)"}}/>}</span>
         <span className="eva-project-title">{node.name}</span>
         <span className="eva-status-count">{node.count}</span>
       </button>
+      {projects.some(p => !!projectCode(p) && (projectId(p) === node.id || projectCode(p) === node.id)) && <button type="button" title={"Создать задачу в проекте "+node.name} aria-label={"Создать задачу в проекте "+node.name} disabled={saving || offlineCache} onClick={()=>{setCreateProject(node.id);setNewTask(true);requestAnimationFrame(()=>shellRef.current?.querySelector<HTMLInputElement>(".eva-create input")?.focus());}}><Plus size={15}/></button>}</div>
       {!collapsed && <>
         {node.sections.map(section => listSection(section, node.id))}
         {node.children.map(child => projectSection(child, level + 1))}
@@ -619,16 +621,16 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     <div className="eva-controls">
       
       <form onSubmit={e => {e.preventDefault();if(search===draftSearch || canLeave())setSearch(draftSearch);}}><input ref={searchInput} aria-label="Поиск задач" onKeyDown={e => {if(e.key==="Escape" && (!search || canLeave())){setDraftSearch("");setSearch("");}}} placeholder="Поиск задач (/)…" value={draftSearch} onChange={e => setDraftSearch(e.target.value)}/><button type="submit">Найти</button></form>
-      <button aria-label="Новая задача" title="Новая задача" disabled={offlineCache} onClick={() => setNewTask(v => !v)}><Plus size={16}/></button>
+      <button aria-label="Новая задача" title="Новая задача" disabled={offlineCache} onClick={() => {setCreateProject("");setNewTask(v => !v);}}><Plus size={16}/></button>
     </div>
     {error && <div className="eva-alert" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
     {message && <p className="eva-message">{message}</p>}
     {newTask && <form className="eva-create" onSubmit={create}>
       <div className="eva-form-title"><h3>Создать задачу</h3><button type="button" onClick={() => setNewTask(false)}><X size={16}/></button></div>
-      <p className="muted">Выбери проект в фильтре выше. Новая задача сразу появится в общем трекере.</p>
+      <p className="muted">{(createProject || project) ? "Проект: "+val(projects.find(p => projectId(p)===(createProject || project) || projectCode(p)===(createProject || project))?.name) : "Выбери проект в нижней панели."}</p>
       <input required placeholder="Название задачи" value={newName} onChange={e => setNewName(e.target.value)}/>
       <textarea placeholder="Описание (текст)" rows={3} value={newText} onChange={e => setNewText(e.target.value)}/>
-      <button type="submit" disabled={saving || offlineCache || !project || !newName.trim()}>Создать в EvaTeam</button>
+      <button type="submit" disabled={saving || offlineCache || !(createProject || project) || !newName.trim()}>Создать в EvaTeam</button>
     </form>}
     {(page.items.length > 0 || filter) && <div className="eva-summary-strip">{filter && <button onClick={()=>setFilter("")}>Сбросить фильтр</button>}
       {statusSummary.map(item => <button key={item.key} className="eva-summary-stat" aria-pressed={filter===item.key} onClick={()=>setFilter(filter===item.key?"":item.key)}>
