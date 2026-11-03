@@ -28,6 +28,10 @@ export class Api {
   }
   openSession() { return this.request<{user: User; expires_in: number}>("/auth/session", "POST"); }
   closeSession() { return this.request<void>("/auth/session", "DELETE"); }
+  pinStatus() { return this.request<{installed: boolean; hostname?: string; sha256?: string; expires_at?: string; warning?: string}>("/admin/eva/pin"); }
+  inspectPin(pem: string) { return this.request<{hostname: string; sha256: string; expires_at: string}>("/admin/eva/pin/inspect", "POST", {pem}); }
+  installPin(pem: string, sha256: string) { return this.request<{installed: boolean; hostname: string; sha256: string}>("/admin/eva/pin", "PUT", {pem, sha256}); }
+  removePin() { return this.request<void>("/admin/eva/pin", "DELETE"); }
   caStatus() { return this.request<{installed: boolean; certificates: number | null; warning?: string}>("/admin/eva/ca"); }
   installCa(pem: string) { return this.request<{installed: boolean; certificates: number}>("/admin/eva/ca", "PUT", {pem}); }
   removeCa() { return this.request<void>("/admin/eva/ca", "DELETE"); }

@@ -13,6 +13,7 @@ from .credentials import store as store_eva_credential, retrieve as retrieve_eva
 from .eva_client import EvaError, probe as probe_eva
 from .ca_store import CertificateError, install as install_ca, remove as remove_ca, status as ca_status, MAX_PEM_BYTES
 from . import web_session
+from . import pin_store
 
 STATUSES = ("new", "in_progress", "review", "done")
 
@@ -112,6 +113,42 @@ def delete_eva_ca(_: User = Depends(admin_user)):
         remove_ca()
     except OSError as exc:
         raise HTTPException(503, "CA storage is not writable") from exc
+
+class ServerPinIn(BaseModel):
+    pem: str = Field(min_length=1, max_length=pin_store.MAX_PIN_BYTES)
+    sha256: str = Field(min_length=64, max_length=95)
+
+
+@app.get("/admin/eva/pin")
+def get_eva_pin(_: User = Depends(admin_user)):
+    return pin_store.status()
+
+
+@app.post("/admin/eva/pin/inspect")
+def inspect_eva_pin(payload: CaBundleIn, _: User = Depends(admin_user)):
+    try:
+        return pin_store.inspect(payload.pem.encode("utf-8"))
+    except CertificateError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.put("/admin/eva/pin")
+def put_eva_pin(payload: ServerPinIn, _: User = Depends(admin_user)):
+    try:
+        return pin_store.install(payload.pem.encode("utf-8"), payload.sha256)
+    except CertificateError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(503, "Pin storage is not writable") from exc
+
+
+@app.delete("/admin/eva/pin", status_code=204)
+def delete_eva_pin(_: User = Depends(admin_user)):
+    try:
+        pin_store.remove()
+    except OSError as exc:
+        raise HTTPException(503, "Pin storage is not writable") from exc
+
 
 class EvaTokenIn(BaseModel):
     token: str = Field(min_length=8, max_length=16384)

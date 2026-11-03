@@ -142,3 +142,7 @@ Login as the EvaDE administrator, open **Настройки → Админист
 ### Persistent browser login
 
 The web UI creates a signed 30-day HttpOnly, SameSite=Lax cookie after validating a user's personal EvaDE bearer token. Refreshing the browser reuses the cookie; logout clears it. The cookie contains **no bearer token** and is bound to the current user's token hash, so token rotation invalidates it. Desktop/Tauri continues to use in-memory bearer authentication, and API clients can continue to use Authorization headers. Cookie-authenticated writes require a matching same-origin Origin header. To deploy behind HTTPS set `EVADE_COOKIE_SECURE=true` in the API environment and restart the API; plain HTTP must not be used on untrusted networks.
+
+### Pin EvaTeam server certificate (when InternalCA is unavailable)
+
+In **Настройки → Администратор · Сертификат сервера EvaTeam**, upload the PEM leaf certificate exported from the browser, inspect and confirm its SHA-256 fingerprint against a trusted source, and select **Проверить и закрепить**. This mode uses exact leaf SHA-256 certificate matching for the configured HTTPS host, including hostname SAN and expiry checks. The fingerprint is enforced on the **actual TLS connection before sending bearer credentials** via urllib3 `assert_fingerprint`, not by disabling verification and preflighting a different connection. On certificate renewal the pin must be updated. The pin is saved in `evade-certs` volume and is admin-only. A properly signed CA is still preferable for standard rotation handling.

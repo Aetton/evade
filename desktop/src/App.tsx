@@ -32,6 +32,8 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [evaToken, setEvaToken] = useState("");
   const [caFile, setCaFile] = useState<File | null>(null);
+  const [pinFile, setPinFile] = useState<File | null>(null);
+  const [pinStatus, setPinStatus] = useState<{installed: boolean; hostname?: string; sha256?: string; expires_at?: string; warning?: string} | null>(null);
   const [caStatus, setCaStatus] = useState<{installed: boolean; certificates: number | null; warning?: string} | null>(null);
   const [caMessage, setCaMessage] = useState("");
   const [evaConnected, setEvaConnected] = useState(false);
@@ -49,12 +51,47 @@ function App() {
     setEvaConfigured(connection.configured);
     setEvaEndpointConfigured(connection.endpoint_configured);
     setServerVersion(`${version.version} · ${version.commit}`);
-    if (me?.is_admin) setCaStatus(await client.caStatus());
+    if (me?.is_admin) {
+      const [ca, pin] = await Promise.all([client.caStatus(), client.pinStatus()]);
+      setCaStatus(ca); setPinStatus(pin);
+    }
   }, [me?.is_admin]);
   useEffect(() => {
     if (!api || !showSettings) return;
     void refreshSettings(api).catch(e => setSettingsError(String(e)));
   }, [api, showSettings, refreshSettings]);
+  async function savePin(e: FormEvent) {
+    e.preventDefault();
+    if (!api || !pinFile || !me?.is_admin) return;
+    setSettingsBusy(true); setSettingsError(""); setCaMessage("");
+    try {
+      if (pinFile.size > 16384) throw new Error("Размер сертификата должен быть меньше 16 КиБ");
+      const pem = await pinFile.text();
+      const info = await api.inspectPin(pem);
+      const confirmed = window.confirm(
+        "Закрепить сертификат только для " + info.hostname + "?\\n\\n" +
+        "SHA-256: " + info.sha256 + "\\n" +
+        "Действителен до: " + new Date(info.expires_at).toLocaleString("ru-RU") + "\\n\\n" +
+        "Сверь SHA-256 с доверенным источником: загрузка сертификата сама по себе не подтверждает его подлинность."
+      );
+      if (!confirmed) return;
+      const installed = await api.installPin(pem, info.sha256);
+      setPinStatus(installed); setPinFile(null);
+      setCaMessage("Сертификат сервера закреплён. Новые соединения проверяют отпечаток до отправки API-токена.");
+    } catch (err) { setSettingsError(String(err)); }
+    finally { setSettingsBusy(false); }
+  }
+  async function deletePin() {
+    if (!api || !me?.is_admin) return;
+    if (!window.confirm("Удалить закреплённый сертификат? Подключение вернётся к обычной проверке CA.")) return;
+    setSettingsBusy(true); setSettingsError(""); setCaMessage("");
+    try {
+      await api.removePin();
+      setPinStatus({installed: false});
+      setCaMessage("Закрепление сертификата удалено.");
+    } catch (err) { setSettingsError(String(err)); }
+    finally { setSettingsBusy(false); }
+  }
   async function saveCa(e: FormEvent) {
     e.preventDefault();
     if (!api || !caFile || !me?.is_admin) return;
@@ -291,6 +328,20 @@ function App() {
         {caStatus?.installed && <button className="secondary-action" disabled={settingsBusy} onClick={() => void deleteCa()}>Удалить CA</button>}
         {caMessage && <p className="muted">{caMessage}</p>}
         <p className="muted">Загружай публичный корневой или промежуточный CA, не серверный сертификат и не приватный ключ. Только администратор может менять доверенные сертификаты.</p>
+      </div>}
+      {me?.is_admin && <div className="detail-section"><h3>Администратор · Сертификат сервера EvaTeam</h3>
+        <p className="muted">Если сертификат EvaTeam экспортирован из браузера, закрепи именно его. Проверяем SHA-256 в ходе TLS-соединения до передачи персонального API-токена.</p>
+        <p className="muted">{pinStatus?.installed ? "Закреплён: " + pinStatus.hostname : "Сертификат сервера не закреплён."} {pinStatus?.warning || ""}</p>
+        {pinStatus?.sha256 && <p className="muted" style={{overflowWrap:"anywhere"}}>SHA-256: {pinStatus.sha256}</p>}
+        {pinStatus?.expires_at && <p className="muted">Действует до: {new Date(pinStatus.expires_at).toLocaleDateString("ru-RU")}</p>}
+        <form className="settings-form" onSubmit={savePin}>
+          <label>Сертификат сайта (.pem / .crt)
+            <input type="file" accept=".pem,.crt" onChange={e => setPinFile(e.target.files?.[0] || null)} />
+          </label>
+          <button className="primary" disabled={settingsBusy || !pinFile} type="submit">Проверить и закрепить</button>
+        </form>
+        {pinStatus?.installed && <button className="secondary-action" disabled={settingsBusy} onClick={() => void deletePin()}>Удалить закрепление</button>}
+        <p className="muted">Убедись, что отпечаток соответствует сертификату настоящей EvaTeam. При перевыпуске сертификата потребуется повторная установка.</p>
       </div>}
       <div className="detail-section"><h3>Обновления</h3>
         <p className="muted">Task Core: {serverVersion || "неизвестно"} · Desktop: 0.1.0</p>
