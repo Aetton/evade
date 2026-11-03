@@ -20,7 +20,10 @@ const projectCode = (p: Row) => val(p.code);
 const richText = (x: unknown) => val(x).replace(/<br\s*\/?\s*>/gi, "\n").replace(/<[^>]*>/g, "");
 
 export default function EvaTasks({ api, userId }: { api: Api; userId: string }) {
-  const [self, setSelf] = useState<{id:string;name:string}|null>(null);
+  const [self, setSelf] = useState<{id:string;name:string}|null>(() => {
+    try { return JSON.parse(localStorage.getItem("evade:eva-self:" + userId) || "null"); }
+    catch { return null; }
+  });
   const [activePerson, setActivePerson] = useState("");
   const [followed, setFollowed] = useState<string[]>(() => {
     try {
@@ -75,8 +78,12 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   useEffect(() => {
     let active = true;
     void api.evaSelf().then(identity => {
-      if (active) { setSelf(identity); setActivePerson(identity.id); }
-    }).catch(e => { if (active) setError("Не удалось определить пользователя EvaTeam: " + String(e)); });
+      if (active && identity.id) {
+        setSelf({id: identity.id, name: identity.name || identity.id});
+        setActivePerson(identity.id);
+        try { localStorage.setItem("evade:eva-self:" + userId, JSON.stringify(identity)); } catch { /* ignore */ }
+      }
+    }).catch(e => { if (active) setError("Не удалось связаться с EvaTeam: " + String(e)); });
     void api.evaProjects().then(p => { if (active) setProjects(p.items); })
       .catch(e => { if (active) setError(String(e)); });
     void api.evaPeople().then(p => {
@@ -84,6 +91,16 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     }).catch(e => { if (active) setError(String(e)); });
     return () => { active = false; };
   }, [api]);
+  useEffect(() => {
+    if (self && !activePerson) setActivePerson(self.id);
+  }, [self, activePerson]);
+  function chooseSelf(p: Row) {
+    const id = val(p.id);
+    if (!/^(Person|CmfPerson):[a-zA-Z0-9_-]+$/.test(id)) return;
+    const identity = {id, name: val(p.name) || val(p.login) || id};
+    setSelf(identity); setActivePerson(id); setManagePeople(false); setError("");
+    try { localStorage.setItem("evade:eva-self:" + userId, JSON.stringify(identity)); } catch { /* ignore */ }
+  }
   useEffect(() => {
     if (activePerson) { setSelected(""); void loadList(0); }
   }, [activePerson, loadList]);
@@ -164,6 +181,19 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       <div><small>ПЕРСОНАЛЬНОЕ ПОДКЛЮЧЕНИЕ · EVATEAM</small><h1>{activePerson === self?.id ? "Мои задачи" : "Задачи · " + nameFor(activePerson)}</h1></div>
       <button className="secondary-action" onClick={() => void loadList(page.offset)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
     </header>
+    {!self && <section className="eva-person-picker">
+      <h3>Выбери себя в EvaTeam</h3>
+      <p className="muted">Ваша EvaTeam не отдаёт владельца API-токена. Найди свою учётную запись в справочнике. Выбор запомнится в этом браузере.</p>
+      <input aria-label="Найти себя в EvaTeam" placeholder="Имя или логин…" value={peopleSearch}
+        onChange={e => setPeopleSearch(e.target.value)} />
+      <div className="eva-person-options">
+        {people.filter(p => (val(p.name) + " " + val(p.login)).toLowerCase().includes(peopleSearch.toLowerCase()))
+          .map((p, i) => <button type="button" key={val(p.id) || i}
+            onClick={() => chooseSelf(p)}>{val(p.name) || val(p.login) || val(p.id)} · {val(p.login)}</button>)}
+      </div>
+      {peopleHasMore && <button type="button" disabled={peopleLoading}
+        onClick={() => void loadMorePeople()}>{peopleLoading ? "Загружаю…" : "Загрузить ещё сотрудников"}</button>}
+    </section>}
     <div className="eva-person-tabs">
       <button type="button" className={activePerson === self?.id ? "active" : ""} disabled={!self}
         onClick={() => setActivePerson(self?.id || "")}><UserRound size={15}/> Мои задачи</button>
@@ -173,7 +203,12 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         <Star size={15}/> {managePeople ? "Закрыть выбор" : "Сотрудники"}
       </button>
     </div>
-    {managePeople && <section className="eva-person-picker">
+    {self && <button type="button" className="secondary-action" onClick={() => {
+      setSelf(null); setActivePerson(""); setPage({items: [], offset: 0, limit: 50, has_more: false});
+      setManagePeople(false);
+      try { localStorage.removeItem("evade:eva-self:" + userId); } catch { /* ignore */ }
+    }}>Сменить мою учётку EvaTeam</button>}
+    {self && managePeople && <section className="eva-person-picker">
       <input aria-label="Поиск сотрудников" placeholder="Найти сотрудника по имени или логину…"
         value={peopleSearch} onChange={e => setPeopleSearch(e.target.value)}/>
       <div className="eva-person-options">

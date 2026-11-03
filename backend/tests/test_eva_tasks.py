@@ -79,3 +79,34 @@ def test_eva_tasks_are_user_scoped_and_mutations_use_documented_methods(monkeypa
         assert client.get("/eva/tasks?responsible=Person:own-1&limit=101", headers=auth_a).status_code == 422
         assert client.get("/eva/tasks?responsible=bad", headers=auth_a).status_code == 422
         assert client.get("/eva/tasks/hello%20bad", headers=auth_a).status_code == 422
+
+
+def test_current_user_rpc_unavailable_allows_manual_selection(monkeypatch):
+    from app.eva_client import EvaError
+    monkeypatch.setenv("EVADE_CREDENTIAL_KEY", Fernet.generate_key().decode())
+    def fake_call(key, method, *, kwargs=None, args=None):
+        if method == "User.getCurrentUser":
+            raise EvaError("RPC method unavailable", status=422)
+        if method == "CmfPerson.list":
+            return [{"id": "Person:one", "name": "Tester", "login": "tester"}]
+        if method == "CmfTask.list":
+            return []
+        return []
+    monkeypatch.setattr(eva_tasks, "eva_call", fake_call)
+    with TestClient(app) as client:
+        with SessionLocal() as db:
+            u = User(name="Fallback Tester", token_hash=hashlib.sha256(b"eva-fallback-user").hexdigest())
+            db.add(u)
+            db.flush()
+            store(db, u.id, "eva-token-fallback")
+            db.commit()
+        headers = {"Authorization": "Bearer eva-fallback-user"}
+        result = client.get("/eva/me", headers=headers)
+        assert result.status_code == 200
+        assert result.json()["requires_selection"] is True
+        assert result.json()["id"] is None
+        directory = client.get("/eva/people", headers=headers)
+        assert directory.status_code == 200
+        assert directory.json()["items"][0]["id"] == "Person:one"
+        tasks = client.get("/eva/tasks?responsible=Person:one", headers=headers)
+        assert tasks.status_code == 200

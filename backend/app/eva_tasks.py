@@ -70,22 +70,34 @@ def attach(user_dep, db_dep):
 
     @router.get("/me")
     def own_eva_identity(key: str = Depends(token)):
-        data = invoke(key, "User.getCurrentUser", kwargs={})
+        # Some installations disable User.getCurrentUser for API tokens.
+        # This optional discovery must never block manual Person selection.
+        try:
+            data = eva_call(key, "User.getCurrentUser", kwargs={})
+        except EvaError as exc:
+            if exc.status == 422:
+                return {"id": None, "name": None, "requires_selection": True}
+            raise HTTPException(exc.status, "Не удалось связаться с EvaTeam для определения пользователя") from exc
         if not isinstance(data, dict):
-            raise HTTPException(502, "EvaTeam не вернула профиль пользователя")
+            return {"id": None, "name": None, "requires_selection": True}
         for candidate in (data.get("person"), data.get("person_id"), data.get("cmf_person"), data.get("id")):
             person_id = candidate.get("id") if isinstance(candidate, dict) else candidate
             if isinstance(person_id, str) and PERSON_ID.fullmatch(person_id):
-                return {"id": person_id, "name": data.get("name") or data.get("login") or person_id}
+                return {"id": person_id, "name": data.get("name") or data.get("login") or person_id, "requires_selection": False}
         login = data.get("login") or data.get("username")
         if not isinstance(login, str) or not login.strip():
-            raise HTTPException(502, "EvaTeam не вернула Person ID или логин текущего пользователя")
-        matches = entries(invoke(key, "CmfPerson.list", kwargs={
-            "filter": ["login", "==", login], "fields": ["id", "name", "login"], "slice": [0, 2]}))
+            return {"id": None, "name": None, "requires_selection": True}
+        try:
+            matches = entries(eva_call(key, "CmfPerson.list", kwargs={
+                "filter": ["login", "==", login], "fields": ["id", "name", "login"], "slice": [0, 2]}))
+        except EvaError as exc:
+            if exc.status == 422:
+                return {"id": None, "name": None, "requires_selection": True}
+            raise HTTPException(exc.status, "Не удалось получить сотрудника EvaTeam") from exc
         for person in matches:
             if isinstance(person, dict) and isinstance(person.get("id"), str) and PERSON_ID.fullmatch(person["id"]):
-                return {"id": person["id"], "name": person.get("name") or login}
-        raise HTTPException(502, "Не удалось сопоставить пользователя EvaTeam с исполнителем")
+                return {"id": person["id"], "name": person.get("name") or login, "requires_selection": False}
+        return {"id": None, "name": None, "requires_selection": True}
 
     @router.get("/tasks")
     def list_tasks(
