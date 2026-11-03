@@ -55,7 +55,7 @@ export function buildProjectTree(tasks: EvaRow[], projects: ProjectRow[]): Proje
   }
   const bags = new Map<string, Map<string, {label: string; tasks: EvaRow[]}>>();
   for (const task of tasks) {
-    const raw = reference(task.project_id) || reference(task.parent?.valueOf ? task.parent : task.parent_id);
+    const raw = reference(task.project_id) || reference(task.parent_id) || reference(task.parent);
     const id = raw ? lookup.get(canonical(raw)) || raw : "__unassigned__";
     getNode(id, id === "__unassigned__" ? "Без проекта" : undefined);
     if (!bags.has(id)) bags.set(id, new Map());
