@@ -195,7 +195,7 @@ function App() {
       </nav>
       <div className="sidebar-bottom">
         <button onClick={() => setShowSettings(true)}><Settings2 size={16}/> Настройки</button>
-        <div className="profile"><span className="avatar">{me?.name.slice(0, 1).toUpperCase()}</span><span className="profile-name">{me?.name}</span><button title="Выйти" onClick={() => void logout()}><LogOut size={16}/></button></div>
+        <div className="profile"><span className="avatar">{me?.name.slice(0, 1).toUpperCase()}</span><span className="profile-name">{me?.name}{me?.is_admin && <small id="eva-profile-identity" style={{display:"block",whiteSpace:"normal",overflowWrap:"anywhere"}}/>}</span><button title="Выйти" onClick={() => void logout()}><LogOut size={16}/></button></div>
       </div>
     </aside>
     <main className="workspace"><EvaTasks api={api} userId={me?.id || ""} personId={me?.eva_person_id} personName={me?.name}/></main>

@@ -550,6 +550,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     </section>;
   }
   const navHost = document.getElementById("eva-task-navigation");
+  const profileHost = document.getElementById("eva-profile-identity");
   const teamActive = teamSection;
   
   const directChildren = page.items.filter(row => {
@@ -560,7 +561,8 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
   });
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div ref={shellRef} data-open={!!selected} className="eva-workspace lab-shell" data-compact={compact}><div className="lab-center" data-inspector-center>
-    {navHost && createPortal(<><button className={!teamActive?"nav-active":""} onClick={()=>{if(activePerson!==self?.id && !canLeave())return;setTeamSection(false);setManagePeople(false);setActivePerson(self?.id || "");}}><UserRound size={16}/> Мои задачи</button><button className={teamActive?"nav-active":""} onClick={()=>{if(!teamSection && !canLeave())return;setTeamSection(true);setManagePeople(true);if(!teamSection)setActivePerson(followed[0] || "");}}><Users size={16}/> Команда</button></>,navHost)}
+    {profileHost && createPortal(self ? "EvaTeam · "+self.name : "EvaTeam · пользователь не выбран",profileHost)}
+    {navHost && createPortal(<><button className={!teamActive?"nav-active":""} onClick={()=>{if(activePerson!==self?.id && !canLeave())return;setTeamSection(false);setActivePerson(self?.id || "");}}><UserRound size={16}/> Мои задачи</button><button className={teamActive?"nav-active":""} onClick={()=>{if(!teamSection && !canLeave())return;setTeamSection(true);if(!teamSection)setActivePerson(followed[0] || "");}}><Users size={16}/> Команда</button></>,navHost)}
     <dialog ref={childDialog} className="eva-child-dialog" aria-labelledby="child-heading" onCancel={e=>{if(saving)e.preventDefault();else setChildParent(null);}}>
       <form onSubmit={createChild}><h3 id="child-heading">Новая подзадача</h3>
         <p>Родитель — {childParent && taskCode(childParent)} · {val(childParent?.name)}</p>
@@ -601,7 +603,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     {teamSection && <div className="eva-person-tabs">
       {followed.map(id => <button type="button" key={id} className={activePerson === id ? "active" : ""}
         onClick={() => {if(id===activePerson || canLeave())setActivePerson(id);}}><Users size={15}/>{nameFor(id)}</button>)}
-      <button type="button" className="eva-manage-people" onClick={() => setManagePeople(v => !v)}>
+      <button type="button" className="eva-manage-people" aria-expanded={managePeople} onClick={() => setManagePeople(v => !v)}>
         <Star size={15}/> {managePeople ? "Скрыть состав" : "Состав команды"}
       </button>
     </div>}
