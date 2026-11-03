@@ -196,3 +196,41 @@ def test_remote_task_cache_is_scoped_idempotent_and_never_writes_legacy_tasks(mo
         assert cached.status_code == 200
         assert cached.json()["cached"] is True
         assert cached.json()["items"][0]["name"] == "From EvaTeam"
+
+
+def test_eva_project_hierarchy_and_task_section_metadata(monkeypatch):
+    monkeypatch.setenv("EVADE_CREDENTIAL_KEY", Fernet.generate_key().decode())
+    calls = []
+    def fake_call(token, method, *, kwargs=None, args=None):
+        calls.append((method, kwargs))
+        if method == "CmfProject.list":
+            return [{"id": "CmfProject:sub", "code": "SUB",
+                     "name": "Nested section", "parent_id": "CmfProject:root"}]
+        if method == "CmfTask.list":
+            return [{"id": "CmfTask:task", "code": "SUB-1", "name": "Nested item",
+                     "project_id": "CmfProject:sub",
+                     "lists": [{"id": "CmfList:sprint", "name": "Sprint 7"}],
+                     "parent_task_id": "CmfTask:parent"}]
+        return []
+
+    monkeypatch.setattr(eva_tasks, "eva_call", fake_call)
+    with TestClient(app) as client:
+        with SessionLocal() as db:
+            user = User(name="Hierarchy tester",
+                        token_hash=hashlib.sha256(b"hierarchy-tester").hexdigest())
+            db.add(user)
+            db.flush()
+            store(db, user.id, "hierarchy-key")
+            db.commit()
+        headers = {"Authorization": "Bearer hierarchy-tester"}
+        projects = client.get("/eva/projects?offset=0&limit=100", headers=headers)
+        assert projects.status_code == 200, projects.text
+        assert projects.json()["items"][0]["parent_id"] == "CmfProject:root"
+        assert "parent_id" in calls[-1][1]["fields"]
+        assert calls[-1][1]["slice"] == [0, 100]
+        tasks = client.get("/eva/tasks?responsible=Person:tester", headers=headers)
+        assert tasks.status_code == 200, tasks.text
+        assert "lists" in calls[-1][1]["fields"]
+        assert "parent_task_id" in calls[-1][1]["fields"]
+        assert "project_id" in calls[-1][1]["fields"]
+        assert tasks.json()["items"][0]["lists"][0]["name"] == "Sprint 7"
