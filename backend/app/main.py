@@ -351,3 +351,10 @@ def activity(task_id: str, db: Session = Depends(db_session), _: User = Depends(
 from .eva_tasks import router as eva_tasks_router, attach as attach_eva_tasks
 attach_eva_tasks(current_user, db_session)
 app.include_router(eva_tasks_router)
+
+
+# Legacy data reconciliation is read-only until a verified existing task is
+# linked explicitly. No remote create/delete is performed by this router.
+from .reconciliation import router as reconcile_router, attach as attach_reconciliation
+attach_reconciliation(current_user, db_session)
+app.include_router(reconcile_router)
