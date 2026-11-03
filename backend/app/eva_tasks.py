@@ -147,8 +147,16 @@ def attach(user_dep, db_dep):
                 raise HTTPException(422, "Недопустимые символы поискового запроса")
             # Dotted usernames and email addresses are logins, not Person.name.
             # A name-only LIKE silently hides users such as kirill.nechaev.
-            field = "login" if "." in term or "@" in term else "name"
-            kwargs["filter"] = [field, "LIKE", "%" + term + "%"]
+            if "." in term or "@" in term:
+                # Exact login lookup uses == (supported by older EvaTeam instances).
+                # Partial usernames still fall back to LIKE.
+                exact_kwargs = {**kwargs, "filter": ["login", "==", term]}
+                exact = entries(invoke(key, "CmfPerson.list", kwargs=exact_kwargs))
+                if exact:
+                    return {"items": exact, "has_more": False}
+                kwargs["filter"] = ["login", "LIKE", "%" + term + "%"]
+            else:
+                kwargs["filter"] = ["name", "LIKE", "%" + term + "%"]
         items = entries(invoke(key, "CmfPerson.list", kwargs=kwargs))
         return {"items": items, "has_more": len(items) == limit}
 
