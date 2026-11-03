@@ -242,3 +242,10 @@
 .evade-unified .lab-shell[data-open=true]{grid-template-columns:minmax(0,1fr) 7px var(--inspector-width,450px)}
 .lab-shell[data-open=true] .inspector-grip{display:block}
 }
+
+.task-description header{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.task-description .description-preview{overflow-wrap:anywhere;line-height:1.55;min-width:0;overflow:auto}
+.description-preview :is(ul,ol){padding-inline-start:1.8em}
+.description-preview pre{max-width:100%;overflow-x:auto;padding:12px;background:var(--lab-bg);border-radius:8px;white-space:pre;overflow-wrap:normal}
+.description-preview .description-plain{white-space:pre-wrap}
+.description-preview a{color:var(--lab-accent)}

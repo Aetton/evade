@@ -1,3 +1,4 @@
+import { TaskDescription } from "./TaskDescription";
 import { bindInspector } from "./inspectorWidth";
 import { createPortal } from "react-dom";
 import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -629,7 +630,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
                   }}>{val(person.name) || val(person.login)} <small>{val(person.login)}</small></button>)}
               </div>}
             </div>
-            <label>Проект<span>{val(task.project) || val(projects.find(p=>projectId(p)===val(task.project_id))?.name) || val(task.project_id) || "—"}</span></label><label>Описание<textarea rows={5} value={editText} onChange={e => setEditText(e.target.value)}/></label>
+            <label>Проект<span>{val(task.project) || val(projects.find(p=>projectId(p)===val(task.project_id))?.name) || val(task.project_id) || "—"}</span></label><TaskDescription key={selected} value={editText} onChange={setEditText}/>
           </form>
           <section className="lab-children"><h3>Подзадачи <small>{directChildren.length} в выборке</small></h3>{directChildren.map(row=><button key={taskCode(row)} onClick={()=>openTask(taskCode(row))}><i className="lab-status-dot" data-status={status(row)}/>{val(row.name)}<small>{taskCode(row)}</small></button>)}</section>
           <div className="eva-comments"><h3><MessageSquare size={15}/> Комментарии ({comments.length})</h3>
