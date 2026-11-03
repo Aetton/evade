@@ -114,7 +114,7 @@ def attach(user_dep, db_dep):
                 raise HTTPException(422, "Некорректный ID проекта EvaTeam")
             filters.append(["project_id", "==", project])
         kwargs = {"slice": [offset, offset + limit],
-                  "fields": ["id", "code", "name", "responsible", "status", "priority", "cmf_created_at"],
+                  "fields": ["id", "code", "name", "responsible", "status", "status_id", "cache_status_type", "priority", "cmf_created_at"],
                   "order_by": ["-cmf_created_at"], "filter": filters[0] if len(filters) == 1 else filters}
         data = entries(invoke(key, "CmfTask.list", kwargs=kwargs))
         has_more = len(data) == limit
