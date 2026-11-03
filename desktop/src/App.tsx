@@ -48,7 +48,7 @@ function App() {
     setEvaConnected(connection.connected);
     setEvaConfigured(connection.configured);
     setEvaEndpointConfigured(connection.endpoint_configured);
-    setServerVersion(version.version);
+    setServerVersion(`${version.version} · ${version.commit}`);
     if (me?.is_admin) setCaStatus(await client.caStatus());
   }, [me?.is_admin]);
   useEffect(() => {
