@@ -56,3 +56,15 @@
 .eva-person-options label span{min-width:0;overflow-wrap:anywhere}
 .eva-person-options label small{display:block;font-size:11px;color:#858594;margin-top:3px}
 .eva-person-picker>p{font-size:12px}
+
+
+/* Server-filtered employee lookup; infinite scroll replaces manual pagination. */
+.eva-person-options{overscroll-behavior:contain;scrollbar-width:thin}
+.eva-person-options button{white-space:normal;text-align:left;overflow-wrap:anywhere}
+.eva-status-group{border-bottom:1px solid #363642}
+.eva-status-group>summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:13px 17px;background:#282832;color:#e9e8ef;font-size:13px;font-weight:700;list-style:none}
+.eva-status-group>summary::-webkit-details-marker{display:none}
+.eva-status-group>summary:before{content:"▾";font-size:12px;color:#9c91a3}
+.eva-status-group:not([open])>summary:before{content:"▸"}
+.eva-status-count{margin-left:auto;background:#3b3743;color:#d9cddc;padding:3px 8px;border-radius:99px;font-variant-numeric:tabular-nums;font-size:11px}
+.eva-status-group .eva-task-row:last-child{border-bottom:0!important}
