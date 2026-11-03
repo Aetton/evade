@@ -17,18 +17,17 @@ const reference = (x: unknown): string => {
   return "";
 };
 const canonical = (x: string) => x.replace(/^(?:CmfProject|Project):/, "");
-const sectionOf = (task: EvaRow): {key: string; label: string} => {
-  // EvaTeam tasks can belong to more than one sprint/list. To avoid displaying
-  // the same task multiple times, use the first membership as primary section.
-  const raw = task.lists;
-  if (Array.isArray(raw) && raw.length) {
-    const value = raw[0];
-    const obj = value && typeof value === "object" ? value as ProjectRow : null;
-    const id = obj ? reference(obj) : txt(value);
-    const label = obj ? txt(obj.name) || txt(obj.code) || id : id;
-    if (id) return {key: "list:" + id, label: label || "Раздел"};
+// Lists/sprints are independent from the EvaProject sidebar tree.
+// Actual tree nodes are nested CmfProject records; tasks attach to their
+// immediate parent CmfProject, never the root project_id when both exist.
+const sectionOf = (task: EvaRow, taskIndex: Map<string, EvaRow>): {key: string; label: string} => {
+  const parent = reference(task.parent_task_id);
+  if (parent) {
+    const related = taskIndex.get(canonical(parent));
+    const label = related ? txt(related.name) || txt(related.code) : "";
+    return {key: "parent-task:" + parent, label: label || "Подзадачи"};
   }
-  return {key: "unsectioned", label: "Без раздела"};
+  return {key: "direct", label: "Задачи"};
 };
 
 export function buildProjectTree(tasks: EvaRow[], projects: ProjectRow[]): ProjectTreeNode[] {
@@ -53,13 +52,23 @@ export function buildProjectTree(tasks: EvaRow[], projects: ProjectRow[]): Proje
     const id = reference(p.id) || reference(p.code);
     if (id) getNode(id, txt(p.name) || txt(p.code) || id);
   }
+  const taskIndex = new Map<string, EvaRow>();
+  for (const task of tasks) {
+    for (const key of [reference(task.id), txt(task.code)]) {
+      if (key) taskIndex.set(canonical(key), task);
+    }
+  }
   const bags = new Map<string, Map<string, {label: string; tasks: EvaRow[]}>>();
   for (const task of tasks) {
-    const raw = reference(task.project_id) || reference(task.parent_id) || reference(task.parent);
-    const id = raw ? lookup.get(canonical(raw)) || raw : "__unassigned__";
+    // parent_id is the immediate tree node. project_id often points to the
+    // root "Брокер VDI", collapsing all tasks into one flat list.
+    const directCandidates = [reference(task.parent_id), reference(task.parent)];
+    const direct = directCandidates.map(v => lookup.get(canonical(v))).find(Boolean);
+    const root = reference(task.project_id);
+    const id = direct || (root ? lookup.get(canonical(root)) || root : "__unassigned__");
     getNode(id, id === "__unassigned__" ? "Без проекта" : undefined);
     if (!bags.has(id)) bags.set(id, new Map());
-    const section = sectionOf(task);
+    const section = sectionOf(task, taskIndex);
     const sections = bags.get(id)!;
     if (!sections.has(section.key)) sections.set(section.key, {label:section.label, tasks:[]});
     sections.get(section.key)!.tasks.push(task);
@@ -68,7 +77,7 @@ export function buildProjectTree(tasks: EvaRow[], projects: ProjectRow[]): Proje
     const node = getNode(id);
     node.sections = [...sections.entries()].map(([key, entry]) => ({
       key, label: entry.label, count: entry.tasks.length, statusGroups: groupEvaTasks(entry.tasks),
-    })).sort((a,b) => a.key === "unsectioned" ? 1 : b.key === "unsectioned" ? -1 :
+    })).sort((a,b) => a.key === "direct" ? -1 : b.key === "direct" ? 1 :
       a.label.localeCompare(b.label, "ru", {sensitivity:"base"}));
     node.ownCount = [...sections.values()].reduce((sum, group) => sum + group.tasks.length, 0);
   }
@@ -107,8 +116,7 @@ export function buildProjectTree(tasks: EvaRow[], projects: ProjectRow[]): Proje
     }
   };
   sort(roots);
-  // Do not show empty projects: the task view is user-scoped.
-  const prune = (items: ProjectTreeNode[]): ProjectTreeNode[] =>
-    items.filter(n => { n.children = prune(n.children); return n.count > 0; });
-  return prune(roots);
+  // Expose real project sections even when this employee currently has no
+  // assigned tasks there. The original pruning hid most of Broker VDI tree.
+  return roots;
 }
