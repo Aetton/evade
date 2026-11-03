@@ -29,6 +29,9 @@ function App() {
   const [showActivity, setShowActivity] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [evaToken, setEvaToken] = useState("");
+  const [caFile, setCaFile] = useState<File | null>(null);
+  const [caStatus, setCaStatus] = useState<{installed: boolean; certificates: number | null; warning?: string} | null>(null);
+  const [caMessage, setCaMessage] = useState("");
   const [evaConnected, setEvaConnected] = useState(false);
   const [evaConfigured, setEvaConfigured] = useState(false);
   const [evaEndpointConfigured, setEvaEndpointConfigured] = useState(false);
@@ -44,11 +47,35 @@ function App() {
     setEvaConfigured(connection.configured);
     setEvaEndpointConfigured(connection.endpoint_configured);
     setServerVersion(version.version);
-  }, []);
+    if (me?.is_admin) setCaStatus(await client.caStatus());
+  }, [me?.is_admin]);
   useEffect(() => {
     if (!api || !showSettings) return;
     void refreshSettings(api).catch(e => setSettingsError(String(e)));
   }, [api, showSettings, refreshSettings]);
+  async function saveCa(e: FormEvent) {
+    e.preventDefault();
+    if (!api || !caFile || !me?.is_admin) return;
+    setSettingsBusy(true); setSettingsError(""); setCaMessage("");
+    try {
+      if (caFile.size > 65536) throw new Error("CA-файл слишком большой (максимум 64 КиБ)");
+      const result = await api.installCa(await caFile.text());
+      setCaStatus(result); setCaFile(null);
+      setCaMessage("CA установлен. Новые подключения к EvaTeam используют его сразу, без перезапуска.");
+    } catch (err) { setSettingsError(String(err)); }
+    finally { setSettingsBusy(false); }
+  }
+  async function deleteCa() {
+    if (!api || !me?.is_admin) return;
+    if (!window.confirm("Удалить установленный корпоративный CA? Связь с EvaTeam может перестать работать.")) return;
+    setSettingsBusy(true); setSettingsError(""); setCaMessage("");
+    try {
+      await api.removeCa();
+      setCaStatus({installed: false, certificates: 0});
+      setCaMessage("Дополнительный CA удалён.");
+    } catch (err) { setSettingsError(String(err)); }
+    finally { setSettingsBusy(false); }
+  }
   async function saveEvaToken(e: FormEvent) {
     e.preventDefault(); if (!api || !evaToken.trim()) return;
     setSettingsBusy(true); setSettingsError("");
@@ -221,6 +248,19 @@ function App() {
         {!evaEndpointConfigured && <p className="muted">Администратор ещё не указал EVADE_EVA_URL.</p>}
         <p className="muted">Ключ хранится на сервере зашифрованным. Проверка выполняет безопасный запрос CmfTask.list. Это не проверка всех прав пользователя.</p>
       </div>
+      {me?.is_admin && <div className="detail-section"><h3>Администратор · CA EvaTeam</h3>
+        <p className="muted">Дополнительные доверенные CA применяются только при соединении EvaDE с EvaTeam. Проверка TLS остаётся включённой.</p>
+        <p className="muted">{caStatus?.installed ? `Установлен CA (сертификатов: ${caStatus.certificates ?? "неизвестно"}).` : "Дополнительный CA не установлен."} {caStatus?.warning || ""}</p>
+        <form className="settings-form" onSubmit={saveCa}>
+          <label>Сертификат CA (.crt / .pem, PEM-формат)
+            <input type="file" accept=".crt,.pem,application/x-pem-file" onChange={e => setCaFile(e.target.files?.[0] || null)} />
+          </label>
+          <button className="primary" type="submit" disabled={settingsBusy || !caFile}>{settingsBusy ? "Установка…" : "Установить CA"}</button>
+        </form>
+        {caStatus?.installed && <button className="secondary-action" disabled={settingsBusy} onClick={() => void deleteCa()}>Удалить CA</button>}
+        {caMessage && <p className="muted">{caMessage}</p>}
+        <p className="muted">Загружай публичный корневой или промежуточный CA, не серверный сертификат и не приватный ключ. Только администратор может менять доверенные сертификаты.</p>
+      </div>}
       <div className="detail-section"><h3>Обновления</h3>
         <p className="muted">Task Core: {serverVersion || "неизвестно"} · Desktop: 0.1.0</p>
         <button className="secondary-action" disabled={updaterBusy} onClick={() => void checkDesktopUpdate()}>{updaterBusy ? "Проверяю…" : "Проверить обновления клиента"}</button>

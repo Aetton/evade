@@ -7,6 +7,7 @@ import os
 from uuid import uuid4
 from urllib.parse import urlsplit
 import httpx
+from .ca_store import verify_context
 
 class EvaError(Exception):
     def __init__(self, message: str, *, status: int = 502, code=None):
@@ -28,10 +29,12 @@ def endpoint() -> str:
 def call(token: str, method: str, *, kwargs: dict | None = None, args: list | None = None) -> object:
     body = {"jsonrpc": "2.2", "method": method, "args": args or [], "kwargs": kwargs or {}, "callid": str(uuid4())}
     try:
-        with httpx.Client(timeout=10.0, follow_redirects=False, trust_env=False) as client:
+        with httpx.Client(timeout=10.0, follow_redirects=False, trust_env=False, verify=verify_context()) as client:
             response = client.post(endpoint(), json=body, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    except httpx.RequestError as exc:
-        raise EvaError("EvaTeam is unreachable") from exc
+    except (httpx.RequestError, OSError) as exc:
+        # Never expose remote response bodies, internal addresses or credentials.
+        reason = "TLS certificate verification failed" if "CERTIFICATE_VERIFY_FAILED" in str(exc) else "network connection failed"
+        raise EvaError(f"EvaTeam: {reason}") from exc
     if response.status_code in (401, 403):
         raise EvaError("EvaTeam rejected the token or permissions", status=422)
     if response.status_code != 200:

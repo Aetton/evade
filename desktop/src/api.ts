@@ -26,6 +26,9 @@ export class Api {
     if (response.status === 204) return undefined as T;
     return response.json();
   }
+  caStatus() { return this.request<{installed: boolean; certificates: number | null; warning?: string}>("/admin/eva/ca"); }
+  installCa(pem: string) { return this.request<{installed: boolean; certificates: number}>("/admin/eva/ca", "PUT", {pem}); }
+  removeCa() { return this.request<void>("/admin/eva/ca", "DELETE"); }
   evaConnection() { return this.request<{connected: boolean; configured: boolean; endpoint_configured: boolean; updated_at: string | null}>("/integrations/eva"); }
   setEvaToken(token: string) { return this.request<{connected: boolean}>("/integrations/eva", "PUT", { token }); }
   testEvaConnection() { return this.request<{ok: boolean; method: string}>("/integrations/eva/test", "POST"); }
