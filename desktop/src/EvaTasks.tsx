@@ -1,7 +1,7 @@
 import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Api } from "./api";
 import { groupEvaTasks } from "./evaStatus";
-import { buildProjectTree, ProjectTreeNode, SectionGroup } from "./evaProjects";
+import { buildProjectTree, ProjectTreeNode, SectionGroup, TaskTreeNode } from "./evaProjects";
 import { ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star, Cloud, CloudOff, Clock } from "lucide-react";
 
 type Row = Record<string, unknown>;
@@ -387,6 +387,30 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       {!collapsedStatuses[key] && group.rows.map(taskEntry)}
     </section>;
   }
+  function taskBranch(node: TaskTreeNode, depth = 0) {
+    const key = "task:" + node.key;
+    const collapsed = collapsedStatuses[key] ?? false;
+    const code = taskCode(node.task);
+    return <div className="eva-task-branch" key={key}>
+      <div className={"eva-task-node " + (selected === code ? "active" : "")}
+        style={{paddingLeft: 12 + depth * 19}}>
+        {node.children.length > 0
+          ? <button className="eva-task-toggle" type="button"
+              aria-label={(collapsed ? "Развернуть " : "Свернуть ") + val(node.task.name)}
+              aria-expanded={!collapsed} onClick={() => toggleStatus(key)}>
+              {collapsed ? "▸" : "▾"}
+            </button>
+          : <span className="eva-task-leaf" aria-hidden="true">·</span>}
+        <button type="button" className="eva-task-open" onClick={() => setSelected(code)}>
+          <span className="eva-code">{code}</span>
+          <strong>{val(node.task.name) || "(без названия)"}</strong>
+          <span className="eva-row-meta">{val(node.task.status)} · Приоритет {val(node.task.priority) || "0"}</span>
+        </button>
+        {node.children.length > 0 && <span className="eva-status-count">{node.count - 1}</span>}
+      </div>
+      {!collapsed && node.children.map(child => taskBranch(child, depth + 1))}
+    </div>;
+  }
   function listSection(section: SectionGroup, projectId: string) {
     const key = "section:" + projectId + ":" + section.key;
     return <section key={key} className="eva-project-section">
@@ -395,7 +419,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
         <span>{section.label}</span><span className="eva-status-count">{section.count}</span>
       </button>
-      {!collapsedStatuses[key] && section.statusGroups.map(group => statusSection(group, key))}
+      {!collapsedStatuses[key] && section.roots.map(node => taskBranch(node))}
     </section>;
   }
   function projectSection(node: ProjectTreeNode, level = 0) {
