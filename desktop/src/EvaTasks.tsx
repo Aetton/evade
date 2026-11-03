@@ -267,7 +267,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         })}
         {!availablePeople.length && <p className="muted">Сотрудники не найдены в загруженном справочнике.</p>}
       </div>
-      {peopleLoading && <p className="muted">Ищу сотрудников…</p>}}
+      {peopleLoading && <p className="muted">Ищу сотрудников…</p>}
       <p className="muted">Закреплённые сотрудники доступны отдельными вкладками. Список сохраняется в этом браузере.</p>
     </section>}
     <div className="eva-controls">
