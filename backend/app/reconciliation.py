@@ -36,6 +36,13 @@ def local_digest(task: Task) -> str:
     return hashlib.sha256(json.dumps(fields, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def remote_digest(remote: dict) -> str:
+    fields = {name: remote.get(name) for name in
+              ("id", "code", "name", "text", "status", "status_id", "priority",
+               "project_id", "responsible_id", "parent_id", "cmf_modified_at", "cmf_version")}
+    return hashlib.sha256(json.dumps(fields, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
+
+
 def normalize(value) -> str:
     return str(value or "").strip().casefold()
 
@@ -128,25 +135,22 @@ def attach(user_dep, db_dep):
                 "remote_search_complete": False,
                 "warning": "Кандидаты из кеша не являются полным поиском EvaTeam. Совпадение названия не подтверждает идентичность."}
 
-    class LinkInput(BaseModel):
+    class InspectInput(BaseModel):
         remote_code: str = Field(min_length=1, max_length=100)
         expected_digest: str = Field(min_length=64, max_length=64)
-        confirm_differences: bool = False
 
-    @router.post("/{task_id}/link")
-    def link_existing(task_id: str, payload: LinkInput,
-                      db: Session = Depends(db_dep), user: User = Depends(user_dep)):
-        task = require_access(db, user, task_id)
-        if payload.expected_digest != local_digest(task):
+    def remote_for_link(db: Session, user: User, local: Task, remote_code: str,
+                        expected_digest: str) -> tuple[dict, str, list[str]]:
+        if expected_digest != local_digest(local):
             raise HTTPException(409, "Локальная задача изменилась. Обнови предпросмотр.")
-        if not CODE_PATTERN.fullmatch(payload.remote_code):
+        if not CODE_PATTERN.fullmatch(remote_code):
             raise HTTPException(422, "Некорректный код задачи EvaTeam")
         key = retrieve_credential(db, user.id)
         if not key:
             raise HTTPException(409, "Подключи персональный токен EvaTeam")
         try:
             result = eva_call(key, "CmfTask.get", kwargs={
-                "filter": ["code", "==", payload.remote_code], "fields": ["*"]})
+                "filter": ["code", "==", remote_code], "fields": ["*"]})
         except EvaError as exc:
             raise HTTPException(exc.status, "Не удалось проверить задачу EvaTeam") from exc
         if isinstance(result, list):
@@ -155,12 +159,40 @@ def attach(user_dep, db_dep):
             result = result[0]
         if not isinstance(result, dict):
             raise HTTPException(502, "EvaTeam вернула неверный формат задачи")
-        if result.get("code") != payload.remote_code or not result.get("id"):
+        if result.get("code") != remote_code or not result.get("id"):
             raise HTTPException(409, "EvaTeam не подтвердила код и ID задачи")
         remote_id = str(result["id"])
         if not remote_id.startswith("CmfTask:"):
             remote_id = "CmfTask:" + remote_id
-        diffs = differences(task, result)
+        return result, remote_id, differences(local, result)
+
+    @router.post("/{task_id}/inspect")
+    def inspect_remote(task_id: str, payload: InspectInput, db: Session = Depends(db_dep),
+                       user: User = Depends(user_dep)):
+        local = require_access(db, user, task_id)
+        remote, remote_id, diffs = remote_for_link(db, user, local, payload.remote_code, payload.expected_digest)
+        return {
+            "remote": {"id": remote_id, "code": remote["code"], "name": remote.get("name"),
+                       "text": remote.get("text"), "status": remote_status(remote),
+                       "priority": remote.get("priority")},
+            "differences": diffs,
+            "remote_digest": remote_digest(remote),
+            "warning": "Подтверждение только связывает записи. Локальные изменения не переносятся, очередь не очищается."
+        }
+
+    class LinkInput(BaseModel):
+        remote_code: str = Field(min_length=1, max_length=100)
+        expected_digest: str = Field(min_length=64, max_length=64)
+        confirm_differences: bool = False
+        expected_remote_digest: str = Field(min_length=64, max_length=64)
+
+    @router.post("/{task_id}/link")
+    def link_existing(task_id: str, payload: LinkInput,
+                      db: Session = Depends(db_dep), user: User = Depends(user_dep)):
+        task = require_access(db, user, task_id)
+        result, remote_id, diffs = remote_for_link(db, user, task, payload.remote_code, payload.expected_digest)
+        if payload.expected_remote_digest != remote_digest(result):
+            raise HTTPException(409, "Задача EvaTeam изменилась после проверки. Проверь её повторно.")
         if diffs and not payload.confirm_differences:
             raise HTTPException(409, {"reason": "conflicting_fields", "fields": diffs,
                                       "remote": {"id": remote_id, "code": result["code"], "name": result.get("name"),
