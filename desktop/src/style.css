@@ -115,3 +115,21 @@
 .evade-unified .eva-empty{line-height:1.6}
 @media(max-width:1150px){.evade-unified .eva-workspace{padding:24px}.evade-unified .eva-layout{grid-template-columns:1fr}}
 @media(max-width:680px){.evade-unified .eva-workspace{padding:15px}.evade-unified .eva-head{flex-direction:column}.evade-unified .eva-head-actions{justify-content:flex-start}.evade-unified .eva-controls>*{flex:1 1 100%}}
+
+
+/* Project-first task hierarchy: projects, lists/sprints, then real statuses. */
+.eva-group-switch{display:flex;gap:5px;padding:9px 12px;background:#23232d;border-bottom:1px solid #3c3c47}
+.eva-group-switch button{flex:1;min-width:0;padding:9px 8px;font-size:12px;border-radius:7px;background:transparent;border:1px solid transparent;color:#a8a4b2}
+.eva-group-switch button:hover{background:#36303e;color:#fff}
+.eva-group-switch button.active{color:#ffe4eb;background:#503440;border-color:#8c576b;font-weight:700}
+.eva-project-group{border-bottom:1px solid #393845}
+.eva-project-heading{display:flex!important;align-items:center!important;gap:10px!important;width:100%!important;min-height:47px;background:#34303e!important;border:0!important;border-radius:0!important;text-align:left!important;color:#f3e7ee!important;font-weight:730!important}
+.eva-project-heading:hover{background:#463849!important}
+.eva-project-title{flex:1;min-width:0;overflow-wrap:anywhere}
+.eva-project-section{border-left:2px solid #735067;margin-left:13px}
+.eva-project-section-heading{display:flex!important;align-items:center!important;gap:10px!important;width:100%!important;text-align:left!important;background:#2b2833!important;border:0!important;border-radius:0!important;padding:11px 14px!important;color:#d8cbd8!important;font-size:12px!important;font-weight:650!important}
+.eva-project-section-heading:hover{background:#38303b!important}
+.eva-project-section .eva-subheading{padding-left:26px!important;background:#262530!important;font-size:12px!important}
+.eva-project-section .eva-task-row{padding-left:35px!important}
+.eva-project-section .eva-status-group{border-bottom:1px solid #37343f}
+.eva-project-heading:focus-visible,.eva-project-section-heading:focus-visible,.eva-group-switch button:focus-visible{outline:2px solid #f18aa0;outline-offset:-2px}
