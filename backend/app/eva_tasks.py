@@ -72,10 +72,11 @@ def attach(user_dep, db_dep):
         if project:
             kwargs["filter"] = ["parent_id", "==", code_ok(project)]
         data = entries(invoke(key, "CmfTask.list", kwargs=kwargs))
+        has_more = len(data) == limit
         if search:
             q = search.casefold()
             data = [row for row in data if isinstance(row, dict) and q in (str(row.get("name", "")) + " " + str(row.get("code", ""))).casefold()]
-        return {"items": data, "offset": offset, "limit": limit, "has_more": len(data) == limit}
+        return {"items": data, "offset": offset, "limit": limit, "has_more": has_more}
 
     @router.get("/projects")
     def projects(
@@ -95,7 +96,7 @@ def attach(user_dep, db_dep):
 
     @router.get("/tasks/{code}")
     def task_detail(code: str, key: str = Depends(token)):
-        data = plain(invoke(key, "CmfTask.get", kwargs={"filter": ["code", "==", code_ok(code)], "fields": ["**"]}))
+        data = plain(invoke(key, "CmfTask.get", kwargs={"filter": ["code", "==", code_ok(code)], "fields": ["*", "comments.*"]}))
         return data
 
     class CreateTask(BaseModel):

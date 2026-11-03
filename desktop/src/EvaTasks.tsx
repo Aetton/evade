@@ -55,7 +55,7 @@ export default function EvaTasks({ api }: { api: Api }) {
       const t = await api.evaTask(code);
       setTask(t);
       setEditName(val(t.name)); setEditText(val(t.text)); setEditStatus(status(t));
-      setEditPriority(priority(t)); setEditResponsible(val(t.responsible?.valueOf ? t.responsible : t.responsible));
+      setEditPriority(priority(t)); setEditResponsible(val(t.responsible));
     } catch (e) { setError(String(e)); }
   }, [api]);
 
