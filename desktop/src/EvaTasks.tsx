@@ -86,7 +86,9 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     setLoading(true); setError("");
     try {
       if (activePerson) {
-        const remote = await api.evaTasks(activePerson, offset, 50, project, search);
+        // The EvaTeam project_id field is the root project. Nested sections
+        // are distinguished by parent_id, so filter the resolved tree locally.
+        const remote = await api.evaTasks(activePerson, offset, 50, "", search);
         setPage(prev => {
           if (offset === 0) return {...remote, offset: 0};
           const existing = new Set(prev.items.map(item => val(item.id) || taskCode(item)));
@@ -336,6 +338,19 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
 
   const groupedTasks = groupEvaTasks(page.items);
   const projectTree = buildProjectTree(page.items, projects);
+  const filteredProjectTree = (() => {
+    if (!project) return projectTree;
+    const find = (nodes: ProjectTreeNode[]): ProjectTreeNode | undefined => {
+      for (const node of nodes) {
+        if (node.id === project) return node;
+        const child = find(node.children);
+        if (child) return child;
+      }
+      return undefined;
+    };
+    const found = find(projectTree);
+    return found ? [found] : [];
+  })();
   function setGrouping(mode: "project"|"status") {
     setGroupBy(mode);
     try { localStorage.setItem("evade:task-group:" + userId, mode); } catch { /* ignored */ }
@@ -486,7 +501,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
             onClick={() => setGrouping("status")}>Статусы</button>
         </div>
         {groupBy === "project"
-          ? projectTree.map(node => projectSection(node))
+          ? filteredProjectTree.map(node => projectSection(node))
           : groupedTasks.map(group => statusSection(group, "root"))}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
         <div className="eva-pager"><span>Загружено задач: {page.items.length}</span>{page.has_more && <button disabled={loading} onClick={() => void loadList(page.items.length)}>{loading ? "Загрузка…" : "Загрузить ещё"} <ChevronRight size={15}/></button>}</div>
