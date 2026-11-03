@@ -69,6 +69,10 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   const [editStatus, setEditStatus] = useState("");
   const [editPriority, setEditPriority] = useState(0);
   const [editResponsible, setEditResponsible] = useState("");
+  const [responsibleName, setResponsibleName] = useState("");
+  const [responsibleSearch, setResponsibleSearch] = useState("");
+  const [responsibleMatches, setResponsibleMatches] = useState<Row[]>([]);
+  const [responsibleSearching, setResponsibleSearching] = useState(false);
   const [newTask, setNewTask] = useState(false);
   const [newName, setNewName] = useState("");
   const [newText, setNewText] = useState("");
@@ -150,9 +154,35 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       const t = await api.evaTask(code);
       setTask(t);
       setEditName(val(t.name)); setEditText(val(t.text)); setEditStatus(status(t));
-      setEditPriority(priority(t)); setEditResponsible(val(t.responsible));
+      setEditPriority(priority(t));
+      const person = t.responsible && typeof t.responsible === "object" ? t.responsible as Row : null;
+      setEditResponsible(val(person?.id) || val(t.responsible_id));
+      setResponsibleName(val(person?.name) || val(t.responsible) || "Не назначен");
+      setResponsibleSearch("");
+      setResponsibleMatches([]);
     } catch (e) { setError(String(e)); }
   }, [api]);
+
+  useEffect(() => {
+    if (!selected || responsibleSearch.trim().length < 2) {
+      setResponsibleMatches([]);
+      setResponsibleSearching(false);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setResponsibleSearching(true);
+      try {
+        const results = await api.evaPeople(0, responsibleSearch.trim());
+        if (active) setResponsibleMatches(results.items);
+      } catch (err) {
+        if (active) setError("Поиск исполнителя: " + String(err));
+      } finally {
+        if (active) setResponsibleSearching(false);
+      }
+    }, 350);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [api, selected, responsibleSearch]);
 
   useEffect(() => {
     let active = true;
@@ -268,7 +298,9 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       if (editText !== val(task.text)) changes.text = editText;
       if (editStatus.trim() && editStatus.trim() !== status(task)) changes.status = editStatus.trim();
       if (editPriority !== priority(task)) changes.priority = editPriority;
-      if (editResponsible.trim() && editResponsible.trim() !== val(task.responsible)) changes.responsible = editResponsible.trim();
+      const original = task.responsible && typeof task.responsible === "object"
+        ? val((task.responsible as Row).id) : val(task.responsible_id);
+      if (editResponsible && editResponsible !== original) changes.responsible = editResponsible;
       if (!Object.keys(changes).length) { setMessage("Нет изменений"); return; }
       await api.updateEvaTask(selected, changes);
       setMessage("Изменения сохранены в EvaTeam.");
@@ -483,8 +515,24 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
                 </select>
               </label>
             </div>
-            <label>Исполнитель (логин / email)<input value={editResponsible} list="eva-people" onChange={e => setEditResponsible(e.target.value)}/></label>
-            <datalist id="eva-people">{people.map((p,i) => <option key={i} value={val(p.login) || val(p.email)}>{val(p.name)}</option>)}</datalist>
+            <div className="eva-assignee-field">
+              <label>Ответственный
+                <span className="eva-assignee-current">{responsibleName}</span>
+                <input value={responsibleSearch} onChange={e => setResponsibleSearch(e.target.value)}
+                  placeholder="Найти по имени или логину…" aria-label="Найти ответственного"/>
+              </label>
+              {responsibleSearching && <small className="muted">Ищу сотрудников…</small>}
+              {responsibleMatches.length > 0 && <div className="eva-assignee-results">
+                {responsibleMatches.map((person, i) => <button type="button" key={val(person.id) || i}
+                  onClick={() => {
+                    const id = val(person.id);
+                    if (!id) return;
+                    setEditResponsible(id);
+                    setResponsibleName(val(person.name) || val(person.login) || id);
+                    setResponsibleMatches([]); setResponsibleSearch("");
+                  }}>{val(person.name) || val(person.login)} <small>{val(person.login)}</small></button>)}
+              </div>}
+            </div>
             <button className="eva-primary" disabled={saving || offlineCache || !editName.trim()}><Save size={16}/> Сохранить изменения</button>
           </form>
           <div className="eva-comments"><h3><MessageSquare size={15}/> Комментарии ({comments.length})</h3>
