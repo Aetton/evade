@@ -40,6 +40,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     catch { return {}; }
   });
   const [syncBusy, setSyncBusy] = useState(false);
+  const syncBusyRef = useRef(false);
   const [syncState, setSyncState] = useState<{cached:number;legacy_tasks:number;legacy_outbox_pending:number;mode:string}|null>(null);
   const [lastSync, setLastSync] = useState<Date|null>(null);
   const [offlineCache, setOfflineCache] = useState(false);
@@ -91,13 +92,14 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   }, [api, activePerson, project, search]);
 
   const runSync = useCallback(async (quiet = false) => {
-    if (!activePerson || syncBusy) return;
+    if (!activePerson || syncBusyRef.current) return;
+    syncBusyRef.current = true;
     setSyncBusy(true);
     if (!quiet) setMessage("");
     try {
       // A scoped pull from EvaTeam into per-user cache. Writes always
       // go directly to EvaTeam; the cache is never a competing authority.
-      const people = [...new Set([self?.id, ...followed].filter((v): v is string => Boolean(v)))];
+      const people = quiet ? [activePerson] : [...new Set([self?.id, ...followed].filter((v): v is string => Boolean(v)))];
       const result = await api.evaSync(people.length ? people : [activePerson]);
       const status = await api.evaSyncStatus();
       setSyncState(status);
@@ -106,8 +108,8 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       if (!quiet) setMessage("Обновлено записей EvaTeam: " + result.synced);
     } catch (e) {
       if (!quiet) setError("Синхронизация не удалась: " + String(e));
-    } finally { setSyncBusy(false); }
-  }, [api, activePerson, self?.id, followed, syncBusy]);
+    } finally { syncBusyRef.current = false; setSyncBusy(false); }
+  }, [api, activePerson, self?.id, followed]);
 
   useEffect(() => {
     if (!activePerson) return;
@@ -117,6 +119,15 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     }, 60000);
     return () => window.clearInterval(id);
   }, [api, activePerson, loadList]);
+
+  useEffect(() => {
+    if (!activePerson) return;
+    void runSync(true);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void runSync(true);
+    }, 180000);
+    return () => window.clearInterval(timer);
+  }, [activePerson, runSync]);
 
   const loadTask = useCallback(async (code: string) => {
     if (!code) return;
