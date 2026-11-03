@@ -24,16 +24,17 @@ ExecStart=/usr/bin/bash "$repo_dir/scripts/update.sh"
 EOF
 cat > "$HOME/.config/systemd/user/evade-update.timer" <<'EOF'
 [Unit]
-Description=Check EvaDE updates daily
+Description=Check EvaDE updates every minute
 [Timer]
-OnCalendar=daily
+OnCalendar=*-*-* *:*:00
 Persistent=true
-RandomizedDelaySec=20min
+AccuracySec=1s
+RandomizedDelaySec=0
 [Install]
 WantedBy=timers.target
 EOF
 systemctl --user daemon-reload
 systemd-analyze --user verify "$HOME/.config/systemd/user/evade-update.service"
 systemctl --user enable --now evade-update.timer
-echo "[+] Daily user timer enabled. Check: systemctl --user list-timers evade-update.timer"
+echo "[+] Every-minute user timer enabled. Check: systemctl --user list-timers evade-update.timer"
 echo "[!] For timer execution while logged out, enable lingering: loginctl enable-linger \"$USER\" (may require administrator privileges)."
