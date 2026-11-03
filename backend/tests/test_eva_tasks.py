@@ -145,3 +145,54 @@ def test_person_name_search_filters_upstream_before_pagination(monkeypatch):
         for invalid in ("%", "_", "a"):
             response = client.get("/eva/people", headers=headers, params={"name": invalid})
             assert response.status_code == 422
+
+
+def test_remote_task_cache_is_scoped_idempotent_and_never_writes_legacy_tasks(monkeypatch):
+    from app.models import EvaTaskCache, Task, SyncOutbox
+    monkeypatch.setenv("EVADE_CREDENTIAL_KEY", Fernet.generate_key().decode())
+    calls = []
+    def upstream(token, method, *, kwargs=None, args=None):
+        calls.append((token, method, kwargs))
+        if method == "CmfTask.list":
+            start, end = kwargs["slice"]
+            if start:
+                return []
+            return [{"id":"CmfTask:abc-123", "code":"DEV-123", "name":"From EvaTeam",
+                     "status":{"code":"TO DO","name":"TO DO"}, "cache_status_type":"OPEN"}]
+        return []
+    monkeypatch.setattr(eva_tasks, "eva_call", upstream)
+    with TestClient(app) as client:
+        with SessionLocal() as db:
+            identities = []
+            for local_name, key in (("Sync User 1", "sync-key-1"), ("Sync User 2", "sync-key-2")):
+                bearer = "local-" + key
+                row = User(name=local_name, token_hash=hashlib.sha256(bearer.encode()).hexdigest())
+                db.add(row)
+                db.flush()
+                store(db, row.id, key)
+                identities.append((row.id, bearer))
+            db.commit()
+        for user_id, bearer in identities:
+            headers = {"Authorization":"Bearer " + bearer}
+            for _ in range(2):
+                response = client.get("/eva/tasks?responsible=Person:test-1", headers=headers)
+                assert response.status_code == 200, response.text
+                assert response.json()["items"][0]["code"] == "DEV-123"
+            sync = client.post("/eva/sync", headers=headers, json={"responsible":["Person:test-1"]})
+            assert sync.status_code == 200, sync.text
+            assert sync.json()["synced"] == 1
+            status = client.get("/eva/sync/status", headers=headers)
+            assert status.status_code == 200
+            assert status.json()["cached"] == 1
+        with SessionLocal() as db:
+            for user_id, _ in identities:
+                cache = db.scalars(select(EvaTaskCache).where(EvaTaskCache.user_id == user_id)).all()
+                assert len(cache) == 1
+                assert cache[0].remote_id == "CmfTask:abc-123"
+            assert db.scalar(select(Task).where(Task.title == "From EvaTeam")) is None
+        headers = {"Authorization":"Bearer " + identities[0][1]}
+        assert client.post("/eva/sync",headers=headers,json={"responsible":["anything"]}).status_code == 422
+        cached = client.get("/eva/tasks/cached?responsible=Person:test-1", headers=headers)
+        assert cached.status_code == 200
+        assert cached.json()["cached"] is True
+        assert cached.json()["items"][0]["name"] == "From EvaTeam"

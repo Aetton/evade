@@ -1,6 +1,6 @@
 # EvaDE 🍎
 
-**Eva Desktop Edition**. A fast desktop-first task tracker, with an independent data model and a planned bi-directional EvaTeam sync adapter.
+**Eva Desktop Edition**. A unified desktop-first EvaTeam task workspace with per-user read-through cache and remote write-through operations.
 
 > _Из Рая выгнали. Зато задачи открываются._
 
@@ -12,7 +12,7 @@
 - Tauri + React desktop UI: compact task list, quick search/create, detail panel, comments, activity, status and assignee edits.
 - Individual API tokens (hashes stored in database).
 
-**Not yet built:** EvaTeam adapter, synchronization workers, production-ready access controls, migrations, automated desktop packaging and unattended signed releases. Outbox entries are not delivered anywhere yet.
+**Still pending:** reconciliation/migration of pre-existing local-only tasks and their `sync_outbox`, production-ready task-level access controls, schema migrations, and unattended signed desktop releases. Do not treat old local outbox items as already synchronized.
 
 ## Run the backend locally
 
@@ -71,10 +71,10 @@ The API binds to localhost:8000 on the host. Put it behind TLS and configure COR
 
 See [docs/architecture.md](docs/architecture.md).
 
-- No runtime dependency on EvaTeam in core task operations.
+- The unified task workspace reads and writes through EvaTeam. An isolated, per-user local snapshot supports a limited offline task list.
 - No integration to Arachne or Forgejo.
 - Author attribution is recorded locally for every create/update/comment.
-- Future EvaTeam writes must use a user-to-Eva credential mapping, with explicit reconciliation.
+- Every EvaTeam write uses the authenticated user's encrypted EvaTeam credential. Legacy local data requires explicit reconciliation before migration.
 
 ## Connect your personal EvaTeam key
 
@@ -86,7 +86,7 @@ python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 Set `EVADE_CREDENTIAL_KEY` in the environment before starting FastAPI, or in Compose's environment. Keep this key backed up independently from the database: if lost, stored EvaTeam credentials cannot be recovered.
 
-Open **Settings / EvaTeam** in the desktop sidebar and paste your own EvaTeam API key. It is encrypted at rest, associated with your authenticated EvaDE user, and never returned from the server. The setting is persisted and can be rotated or removed. Set `EVADE_EVA_URL=https://your-eva-host/api/` on the backend and use **Проверить подключение** to check the personal token with a read-only `CmfTask.list` query. This probes task-list permission, not every API permission. **No bidirectional sync happens yet.**
+Open **Settings / EvaTeam** in the desktop sidebar and paste your own EvaTeam API key. It is encrypted at rest, associated with your authenticated EvaDE user, and never returned from the server. The setting is persisted and can be rotated or removed. Set `EVADE_EVA_URL=https://your-eva-host/api/` on the backend and use **Проверить подключение** to check the personal token with a read-only `CmfTask.list` query. This probes task-list permission, not every API permission. The unified task interface now writes through to EvaTeam and maintains a local cache. Historical local-only tasks still require explicit reconciliation.
 
 For release setup and update limitations see [docs/updates.md](docs/updates.md).
 
@@ -149,4 +149,11 @@ In **Настройки → Администратор · Сертификат �
 
 ### Live EvaTeam task workspace
 
-Select **EvaTeam · Задачи** in the sidebar. After connecting your personal EvaTeam token, EvaDE lists up to 50 visible tasks at a time, permits project filtering, card browsing, creating tasks, editing title, description, status code, priority and responsible user, and posting comments. The UI sends documented CmfTask.list/get/create/update and CmfComment.create JSON-RPC 2.2 operations through the server using **the current user's own token**, so remote rights remain enforced by EvaTeam. Page search is local to the currently fetched page; it is not a global EvaTeam full-text search. Project workflow status values vary: enter a valid status code accepted by EvaTeam, rather than assuming EvaDE's four local statuses apply. No imported task data enters the shared local EvaDE database, and synchronization is not enabled by this feature.
+Select **EvaTeam · Задачи** in the sidebar. After connecting your personal EvaTeam token, EvaDE lists up to 50 visible tasks at a time, permits project filtering, card browsing, creating tasks, editing title, description, status code, priority and responsible user, and posting comments. The UI sends documented CmfTask.list/get/create/update and CmfComment.create JSON-RPC 2.2 operations through the server using **the current user's own token**, so remote rights remain enforced by EvaTeam. Page search is local to the currently fetched page; it is not a global EvaTeam full-text search. Project workflow status values vary: enter a valid status code accepted by EvaTeam, rather than assuming EvaDE's four local statuses apply. Task lists now populate an isolated per-user `eva_task_cache` table and can be refreshed with `/eva/sync`. Edits and comments are written to EvaTeam under the user's token. Previous locally created tasks are not automatically imported, and old outbox events are not sent to EvaTeam.
+
+
+### Unified workspace and synchronization boundaries
+
+EvaDE shows **one task workspace**, not separate EvaTeam and local task pages. EvaTeam remains authoritative for task records. The UI fetches remote lists, stores idempotent per-user snapshots in `eva_task_cache`, refreshes the current person's selection automatically every three minutes (and the current list every minute), and can refresh all followed people on demand with **Синхронизировать**. Edits, creation and comments go directly to EvaTeam using the caller's own credential; the refreshed remote list then updates the cache. If a list request fails, the last cached list can be shown explicitly as *read-only / possibly stale* with no pending write queue or false success. Sync is bounded at 2000 tasks per person and reports when that limit was reached.
+
+**Important:** This is **not yet a completed migration of pre-existing local tasks**. The old `tasks`, `external_links` and `sync_outbox` records have not been reconciled with EvaTeam, and pushing them blindly may create duplicates or overwrite other people's changes. `GET /eva/sync/status` reports this gap; the UI shows a warning if existing local data is waiting for migration. Do not declare total bi-directional migration complete until unique remote IDs, conflict resolution, deletion semantics, and an auditable migration have been tested against the real EvaTeam instance. No automatic remote deletion is performed.

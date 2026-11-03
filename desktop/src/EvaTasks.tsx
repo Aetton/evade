@@ -1,10 +1,11 @@
 import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Api } from "./api";
 import { groupEvaTasks } from "./evaStatus";
-import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star, Cloud, CloudOff, AlertTriangle, Clock } from "lucide-react";
 
 type Row = Record<string, unknown>;
 type Page = { items: Row[]; offset: number; limit: number; has_more: boolean };
+const STATUS_CODES = ["TO DO", "IN PROGRESS", "PAUSE", "IN REVIEW", "DONE", "CANCEL"] as const;
 const val = (x: unknown): string => {
   if (x == null) return "";
   if (typeof x === "object") {
@@ -39,6 +40,11 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     try { return JSON.parse(localStorage.getItem("evade:eva-collapsed:" + userId) || "{}"); }
     catch { return {}; }
   });
+  const [syncBusy, setSyncBusy] = useState(false);
+  const syncBusyRef = useRef(false);
+  const [syncState, setSyncState] = useState<{cached:number;legacy_tasks:number;legacy_outbox_pending:number;mode:string}|null>(null);
+  const [lastSync, setLastSync] = useState<Date|null>(null);
+  const [offlineCache, setOfflineCache] = useState(false);
   const [page, setPage] = useState<Page>({items: [], offset: 0, limit: 50, has_more: false});
   const [projects, setProjects] = useState<Row[]>([]);
   const [people, setPeople] = useState<Row[]>([]);
@@ -69,10 +75,60 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
 
   const loadList = useCallback(async (offset = 0) => {
     setLoading(true); setError("");
-    try { if (activePerson) setPage(await api.evaTasks(activePerson, offset, 50, project, search)); }
-    catch (e) { setError(String(e)); }
+    try {
+      if (activePerson) {
+        const remote = await api.evaTasks(activePerson, offset, 50, project, search);
+        setPage(remote); setOfflineCache(false);
+        setLastSync(new Date());
+      }
+    } catch (e) {
+      try {
+        const cached = await api.evaCachedTasks(activePerson, offset, 50);
+        // Offline cache isn't filtered by project/search: never pretend it is.
+        setPage(cached); setOfflineCache(true);
+        setError("EvaTeam недоступна. Показан последний сохранённый снимок задач (без фильтра проекта и поиска). Редактирование временно отключено. " + String(e));
+      } catch { setError(String(e)); }
+    }
     finally { setLoading(false); }
   }, [api, activePerson, project, search]);
+
+  const runSync = useCallback(async (quiet = false) => {
+    if (!activePerson || syncBusyRef.current) return;
+    syncBusyRef.current = true;
+    setSyncBusy(true);
+    if (!quiet) setMessage("");
+    try {
+      // A scoped pull from EvaTeam into per-user cache. Writes always
+      // go directly to EvaTeam; the cache is never a competing authority.
+      const people = quiet ? [activePerson] : [...new Set([self?.id, ...followed].filter((v): v is string => Boolean(v)))];
+      const result = await api.evaSync(people.length ? people : [activePerson]);
+      const status = await api.evaSyncStatus();
+      setSyncState(status);
+      setLastSync(new Date());
+      if (result.partial.length) setError("Синхронизация ограничена 2000 задачами на сотрудника. Требуется дополнительная пагинация.");
+      if (!quiet) setMessage("Обновлено записей EvaTeam: " + result.synced);
+    } catch (e) {
+      if (!quiet) setError("Синхронизация не удалась: " + String(e));
+    } finally { syncBusyRef.current = false; setSyncBusy(false); }
+  }, [api, activePerson, self?.id, followed]);
+
+  useEffect(() => {
+    if (!activePerson) return;
+    void api.evaSyncStatus().then(setSyncState).catch(() => {});
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadList(0);
+    }, 60000);
+    return () => window.clearInterval(id);
+  }, [api, activePerson, loadList]);
+
+  useEffect(() => {
+    if (!activePerson) return;
+    void runSync(true);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void runSync(true);
+    }, 180000);
+    return () => window.clearInterval(timer);
+  }, [activePerson, runSync]);
 
   const loadTask = useCallback(async (code: string) => {
     if (!code) return;
@@ -179,7 +235,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
 
   async function saveEdit(e: FormEvent) {
     e.preventDefault();
-    if (!selected || !task || !editName.trim()) return;
+    if (!selected || !task || !editName.trim() || offlineCache) return;
     setSaving(true); setError(""); setMessage("");
     try {
       const changes: Record<string, unknown> = {};
@@ -198,6 +254,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
 
   async function create(e: FormEvent) {
     e.preventDefault();
+    if (offlineCache) return;
     const p = projects.find(x => projectId(x) === project);
     if (!p || !newName.trim()) return;
     setSaving(true); setError(""); setMessage("");
@@ -210,7 +267,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   }
   async function sendComment(e: FormEvent) {
     e.preventDefault();
-    if (!selected || !comment.trim()) return;
+    if (!selected || !comment.trim() || offlineCache) return;
     setSaving(true); setError(""); setMessage("");
     try {
       await api.commentEvaTask(selected, comment.trim()); setComment("");
@@ -229,12 +286,24 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       return updated;
     });
   }
+  const statusSummary = groupedTasks.map(g => ({label:g.label,count:g.rows.length,key:g.key}));
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div className="eva-workspace">
     <header className="eva-head">
-      <div><small>ПЕРСОНАЛЬНОЕ ПОДКЛЮЧЕНИЕ · EVATEAM</small><h1>{activePerson === self?.id ? "Мои задачи" : "Задачи · " + nameFor(activePerson)}</h1></div>
-      <button className="secondary-action" onClick={() => void loadList(page.offset)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
+      <div><small>ЗАДАЧИ · ЕДИНОЕ РАБОЧЕЕ ПРОСТРАНСТВО</small><h1>{activePerson === self?.id ? "Мои задачи" : "Команда / " + nameFor(activePerson)}</h1>
+        <div className="eva-sync-caption">{offlineCache ? <><CloudOff size={13}/> Сохранённая копия · только просмотр</> :
+          <><Cloud size={13}/> Данные EvaTeam · {lastSync ? "проверены " + lastSync.toLocaleTimeString("ru-RU", {hour:"2-digit",minute:"2-digit"}) : "подключение"}</>}</div>
+      </div>
+      <div className="eva-head-actions">
+        <button className="secondary-action" onClick={() => void runSync()} disabled={syncBusy || !activePerson}><RefreshCw size={15} className={syncBusy ? "spin" : ""}/> Синхронизировать</button>
+        <button className="secondary-action" onClick={() => void loadList(page.offset)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
+      </div>
     </header>
+    {syncState && (syncState.legacy_tasks > 0 || syncState.legacy_outbox_pending > 0) &&
+      <div className="eva-sync-warning" role="status"><AlertTriangle size={16}/><span>
+        Старые локальные данные ещё не сопоставлены с EvaTeam: {syncState.legacy_tasks} задач,
+        {syncState.legacy_outbox_pending} операций в очереди. Автоматический импорт отключён во избежание дублей и конфликтов.
+      </span></div>}
     {!self && <section className="eva-person-picker">
       <h3>Выбери себя в EvaTeam</h3>
       <p className="muted">Ваша EvaTeam не отдаёт владельца API-токена. Найди свою учётную запись в справочнике. Выбор запомнится в этом браузере.</p>
@@ -282,17 +351,22 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         {projects.map(p => <option key={projectId(p) || projectCode(p)} value={projectId(p)}>{val(p.name) || projectCode(p)}</option>)}
       </select>
       <form onSubmit={e => {e.preventDefault();setSearch(draftSearch);}}><input placeholder="Поиск в загруженной странице…" value={draftSearch} onChange={e => setDraftSearch(e.target.value)}/><button type="submit">Найти</button></form>
-      <button onClick={() => setNewTask(v => !v)}><Plus size={16}/> Новая задача</button>
+      <button disabled={offlineCache} onClick={() => setNewTask(v => !v)}><Plus size={16}/> Новая задача</button>
     </div>
     {error && <div className="eva-alert" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
     {message && <p className="eva-message">{message}</p>}
     {newTask && <form className="eva-create" onSubmit={create}>
       <div className="eva-form-title"><h3>Создать задачу</h3><button type="button" onClick={() => setNewTask(false)}><X size={16}/></button></div>
-      <p className="muted">Выбери проект в фильтре выше. Создание идёт непосредственно в EvaTeam.</p>
+      <p className="muted">Выбери проект в фильтре выше. Новая задача сразу появится в общем трекере.</p>
       <input required placeholder="Название задачи" value={newName} onChange={e => setNewName(e.target.value)}/>
       <textarea placeholder="Описание (текст)" rows={3} value={newText} onChange={e => setNewText(e.target.value)}/>
-      <button type="submit" disabled={saving || !project || !newName.trim()}>Создать в EvaTeam</button>
+      <button type="submit" disabled={saving || offlineCache || !project || !newName.trim()}>Создать в EvaTeam</button>
     </form>}
+    {page.items.length > 0 && <div className="eva-summary-strip">
+      {statusSummary.map(item => <div key={item.key} className="eva-summary-stat">
+        <span>{item.label}</span><strong>{item.count}</strong>
+      </div>)}
+    </div>}
     <div className="eva-layout">
       <section className="eva-list">
         <div className="eva-list-heading"><strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong><span>{loading ? "Загрузка…" : `Показано: ${page.items.length}`}</span></div>
@@ -306,7 +380,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
             <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
               onClick={() => setSelected(taskCode(t))}>
               <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
-              <span className="eva-row-meta">{val(t.responsible) || "Без исполнителя"}</span>
+              <span className="eva-row-meta"><span>Приоритет: {val(t.priority) || "0"}</span>{Boolean(t.cmf_modified_at) && <span><Clock size={12}/> {new Date(String(t.cmf_modified_at)).toLocaleDateString("ru-RU")}</span>}</span>
             </button>)}
         </section>)}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
@@ -319,16 +393,25 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
             <label>Название<input value={editName} onChange={e => setEditName(e.target.value)}/></label>
             <label>Описание<textarea rows={5} value={editText} onChange={e => setEditText(e.target.value)}/></label>
             <div className="eva-edit-grid">
-              <label>Код статуса EvaTeam<input value={editStatus} placeholder="Статус проекта" onChange={e => setEditStatus(e.target.value)}/></label>
-              <label>Приоритет (0–5)<input type="number" min={0} max={5} value={editPriority} onChange={e => setEditPriority(Number(e.target.value))}/></label>
+              <label>Статус
+                <select value={editStatus} onChange={e => setEditStatus(e.target.value)}>
+                  {editStatus && !STATUS_CODES.includes(editStatus as typeof STATUS_CODES[number]) && <option value={editStatus}>{editStatus}</option>}
+                  {STATUS_CODES.map(code => <option key={code} value={code}>{code}</option>)}
+                </select>
+              </label>
+              <label>Приоритет
+                <select value={editPriority} onChange={e => setEditPriority(Number(e.target.value))}>
+                  {[0,1,2,3,4,5].map(value => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
             </div>
             <label>Исполнитель (логин / email)<input value={editResponsible} list="eva-people" onChange={e => setEditResponsible(e.target.value)}/></label>
             <datalist id="eva-people">{people.map((p,i) => <option key={i} value={val(p.login) || val(p.email)}>{val(p.name)}</option>)}</datalist>
-            <button className="eva-primary" disabled={saving || !editName.trim()}><Save size={16}/> Сохранить в EvaTeam</button>
+            <button className="eva-primary" disabled={saving || offlineCache || !editName.trim()}><Save size={16}/> Сохранить изменения</button>
           </form>
           <div className="eva-comments"><h3><MessageSquare size={15}/> Комментарии ({comments.length})</h3>
             {comments.map((c,i) => <div className="eva-comment" key={i}><small>{val(c.cmf_author) || val(c.author) || "Автор"}</small><p>{richText(c.text)}</p></div>)}
-            <form onSubmit={sendComment}><textarea rows={3} placeholder="Новый комментарий…" value={comment} onChange={e => setComment(e.target.value)}/><button disabled={saving || !comment.trim()}>Отправить</button></form>
+            <form onSubmit={sendComment}><textarea rows={3} placeholder="Новый комментарий…" value={comment} onChange={e => setComment(e.target.value)}/><button disabled={saving || offlineCache || !comment.trim()}>Отправить</button></form>
           </div>
         </>}
       </section>

@@ -74,3 +74,44 @@
 .eva-status-heading:hover{background:#32323e!important}
 .eva-status-heading .eva-status-arrow{width:12px;flex:0 0 12px;color:#9c91a3}
 .eva-status-heading:focus-visible{outline:2px solid #ee7182;outline-offset:-2px}
+
+/* EvaDE unified workspace: visual hierarchy, calm surfaces, robust task lists. */
+.evade-unified .sidebar{background:linear-gradient(175deg,#181820 0%,#1a1922 68%,#211c27 100%)}
+.evade-unified .sidebar>nav{margin-top:16px}
+.evade-unified .sidebar .nav-label{margin:0 9px 10px;font-size:10px;letter-spacing:1.2px}
+.evade-unified .sidebar nav button.nav-active{border:1px solid #5a3746;background:#432d3a;color:#fff}
+.evade-unified .workspace{background:radial-gradient(ellipse at 20% 0%,#2c222d 0%,#1b1b23 43%,#181820 100%)}
+.evade-unified .eva-workspace{max-width:1600px;margin:0 auto;padding:34px 38px 65px}
+.evade-unified .eva-head{margin-bottom:20px;align-items:flex-start}
+.evade-unified .eva-head h1{font-size:30px;letter-spacing:-.75px;font-weight:760;margin:8px 0 10px}
+.eva-sync-caption{display:flex;align-items:center;gap:7px;font-size:12px;color:#9dafa5}
+.eva-head-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.evade-unified .eva-controls{padding:15px;background:#23232c;border:1px solid #383842;border-radius:12px;gap:10px}
+.evade-unified .eva-controls select{min-width:195px}
+.evade-unified .eva-controls button:hover,.evade-unified .eva-head-actions button:hover{border-color:#ee8398}
+.evade-unified .eva-person-tabs{margin:18px 0;gap:7px}
+.evade-unified .eva-person-tabs button{border-radius:999px;padding:9px 13px;font-size:12px}
+.evade-unified .eva-person-tabs button.active{background:#ed8196;border-color:#ed8196;color:#24131a;font-weight:700}
+.evade-unified .eva-layout{grid-template-columns:minmax(320px,1.02fr) minmax(345px,1fr);gap:18px}
+.evade-unified .eva-list,.evade-unified .eva-editor{background:#22222b;border-color:#3b3a46;box-shadow:0 18px 44px #0002}
+.evade-unified .eva-list-heading,.evade-unified .eva-editor-heading{background:#282732}
+.evade-unified .eva-task-row{padding:15px 18px!important;transition:background .12s ease}
+.evade-unified .eva-task-row:hover{background:#34303d!important}
+.evade-unified .eva-task-row.active{background:#45313f!important;box-shadow:inset 3px 0 #f18aa0}
+.evade-unified .eva-task-row strong{line-height:1.4;font-size:13px}
+.evade-unified .eva-status-heading{letter-spacing:.15px!important;background:#302e3a!important}
+.evade-unified .eva-status-count{background:#49424c;color:#ffdfeb}
+.evade-unified .eva-row-meta{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.evade-unified .eva-row-meta span{display:inline-flex;align-items:center;gap:5px}
+.eva-summary-strip{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+.eva-summary-stat{display:flex;gap:10px;align-items:center;justify-content:space-between;min-width:118px;border:1px solid #49414c;border-radius:9px;padding:10px 12px;background:#27232c}
+.eva-summary-stat span{font-size:11px;color:#b9abb8;max-width:130px}
+.eva-summary-stat strong{font-size:17px;font-variant-numeric:tabular-nums;color:#f8d8df}
+.eva-sync-warning{border:1px solid #685445;background:#362e2a;border-radius:9px;padding:12px 14px;margin:12px 0;display:flex;align-items:flex-start;gap:10px;color:#f4d7b8;font-size:12px;line-height:1.55}
+.eva-sync-warning svg{flex:0 0 auto;margin-top:2px}
+.evade-unified .eva-edit-form{gap:15px}
+.evade-unified .eva-edit-form input,.evade-unified .eva-edit-form textarea{background:#2b2934}
+.evade-unified .eva-edit-form label{font-weight:600}
+.evade-unified .eva-empty{line-height:1.6}
+@media(max-width:1150px){.evade-unified .eva-workspace{padding:24px}.evade-unified .eva-layout{grid-template-columns:1fr}}
+@media(max-width:680px){.evade-unified .eva-workspace{padding:15px}.evade-unified .eva-head{flex-direction:column}.evade-unified .eva-head-actions{justify-content:flex-start}.evade-unified .eva-controls>*{flex:1 1 100%}}

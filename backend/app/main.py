@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .database import Base, SessionLocal, engine
-from .models import Activity, Comment, EvaCredential, Project, SyncOutbox, Task, User
+from .models import Activity, Comment, EvaCredential, Project, SyncOutbox, Task, User, EvaTaskCache
 from .credentials import store as store_eva_credential, retrieve as retrieve_eva_credential
 from .eva_client import EvaError, probe as probe_eva
 from .ca_store import CertificateError, install as install_ca, remove as remove_ca, status as ca_status, MAX_PEM_BYTES
