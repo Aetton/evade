@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from .task_description import eva_description
 from .credentials import retrieve as retrieve_credential
 from .models import EvaIdentity, EvaTaskCache, Task, SyncOutbox, ExternalLink
 from .eva_client import EvaError, call as eva_call
@@ -287,6 +288,13 @@ def attach(user_dep, db_dep):
         data = plain(invoke(key, "CmfTask.get", kwargs={"filter": ["code", "==", code_ok(code)], "fields": ["*", "comments.*", "executors.*"]}))
         return data
 
+    class DescriptionPreview(BaseModel):
+        text: str = Field(max_length=50000)
+
+    @router.post("/description/preview")
+    def preview_description(payload: DescriptionPreview, user=Depends(user_dep)):
+        return {"html": eva_description(payload.text)}
+
     class CreateTask(BaseModel):
         name: str = Field(min_length=1, max_length=300)
         text: str = Field(default="", max_length=50000)
@@ -309,7 +317,7 @@ def attach(user_dep, db_dep):
             parent = "CmfTask:" + str(object_id).removeprefix("CmfTask:")
         else:
             parent = code_ok(payload.project)
-        kwargs = {"name": payload.name, "parent": parent, "text": payload.text}
+        kwargs = {"name": payload.name, "parent": parent, "text": eva_description(payload.text)}
         if payload.priority is not None:
             kwargs["priority"] = payload.priority
         if payload.responsible:
@@ -329,6 +337,8 @@ def attach(user_dep, db_dep):
     @router.patch("/tasks/{code}")
     def update_task(code: str, payload: PatchTask, key: str = Depends(token)):
         changes = payload.model_dump(exclude_unset=True)
+        if isinstance(changes.get("text"), str):
+            changes["text"] = eva_description(changes["text"])
         if "executors" in changes:
             changes["executors"] = list(dict.fromkeys(person_ok(pid) for pid in (payload.executors or []) if pid != payload.responsible))
         if not changes:

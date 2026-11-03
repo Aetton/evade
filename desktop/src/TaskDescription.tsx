@@ -1,10 +1,11 @@
+import type { Api } from "./api";
 import { createElement, useMemo, useState, type ReactNode } from "react";
 
-const allowed = new Set("p div br strong b em i u s ul ol li pre code blockquote h1 h2 h3 h4 h5 h6 table thead tbody tr td th hr sup sub".split(" "));
+const allowed = new Set("p div br strong b em i u s del ul ol li pre code blockquote h1 h2 h3 h4 h5 h6 table thead tbody tr td th hr sup sub".split(" "));
 const ignored = new Set("script style template iframe object embed svg math form input button img link meta".split(" "));
 
 function renderDescription(value: string): ReactNode {
-  if (!/<(?:p|div|br|strong|b|em|i|u|s|ol|ul|li|pre|code|blockquote|h[1-6]|table|a|span)\b[^>]*>/i.test(value)) {
+  if (!/<(?:p|div|br|strong|b|em|i|u|s|ol|ul|li|pre|code|blockquote|h[1-6]|table|a|span|hr|del)\b[^>]*>/i.test(value)) {
     return <div className="description-plain">{value}</div>;
   }
   // Template content stays inert. Only rebuild known elements and attributes as React nodes.
@@ -29,14 +30,30 @@ function renderDescription(value: string): ReactNode {
   return Array.from(template.content.childNodes, render);
 }
 
-export function TaskDescription({value, onChange}: {value: string; onChange: (value: string) => void}) {
+export function TaskDescription({api, value, onChange}: {api: Api; value: string; onChange: (value: string) => void}) {
   const [editing, setEditing] = useState(false);
-  const preview = useMemo(() => renderDescription(value), [value]);
+  const [rendered,setRendered] = useState<{source:string; html:string} | null>(null);
+  const [error,setError] = useState("");
+  const [busy,setBusy] = useState(false);
+  const output = rendered?.source === value ? rendered.html : value;
+  const preview = useMemo(() => renderDescription(output), [output]);
+  async function toggleEditor() {
+    setError("");
+    if (!editing) { setEditing(true); return; }
+    setBusy(true);
+    try {
+      const result = await api.request<{html:string}>("/eva/description/preview","POST",{text:value});
+      setRendered({source:value,html:result.html}); setEditing(false);
+    } catch (err) { setError(String(err)); }
+    finally { setBusy(false); }
+  }
   return <section className="task-description">
-    <header><strong>Описание</strong><button type="button" onClick={()=>setEditing(!editing)}>
+    <header><strong>Описание</strong><button type="button" disabled={busy} onClick={toggleEditor}>
       {editing ? "Предпросмотр" : "Редактировать исходник"}
     </button></header>
-    {editing ? <textarea aria-label="Исходный текст описания" rows={8} value={value} onChange={e=>onChange(e.target.value)}/> :
+    {error && <small role="alert">{error}</small>}
+    {editing && <small>Можно писать в Markdown или редактировать HTML EvaTeam.</small>}
+    {editing ? <textarea disabled={busy} aria-label="Исходный текст описания" rows={8} value={value} onChange={e=>onChange(e.target.value)}/> :
       <div className="description-preview">{value ? preview : "Описание пока пустое"}</div>}
   </section>;
 }

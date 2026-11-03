@@ -705,7 +705,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
               </div>}
             </div>
             <ExecutorPicker api={api} primary={editResponsible} people={editExecutors} onChange={setEditExecutors}/>
-            <label>Проект<span>{val(task.project) || val(projects.find(p=>projectId(p)===val(task.project_id))?.name) || val(task.project_id) || "—"}</span></label><TaskDescription key={selected} value={editText} onChange={setEditText}/>
+            <label>Проект<span>{val(task.project) || val(projects.find(p=>projectId(p)===val(task.project_id))?.name) || val(task.project_id) || "—"}</span></label><TaskDescription api={api} key={selected} value={editText} onChange={setEditText}/>
           </form>
           <section className="lab-children"><h3>Подзадачи <small>{directChildren.length} в выборке</small></h3>{directChildren.map(row=><button key={taskCode(row)} onClick={()=>openTask(taskCode(row))}><i className="lab-status-dot" data-status={status(row)}/>{val(row.name)}<small>{taskCode(row)}</small></button>)}{addChildButton({...task, code:selected}, true)}</section>
           <div className="eva-comments"><h3><MessageSquare size={15}/> Комментарии ({comments.length})</h3>
