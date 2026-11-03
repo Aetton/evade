@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, Api, Comment, Project, Status, Task, User } from "./api";
+import { isTauri } from "@tauri-apps/api/core";
 import { Apple, ArrowRight, Check, ChevronDown, ChevronRight, Circle, Command, Inbox, ListTodo, LoaderCircle, LogOut, MessageSquare, Plus, RefreshCw, Search, Send, Settings2, UserRound, X } from "lucide-react";
 
 const STATUS: Record<Status, string> = { new: "Новая", in_progress: "В работе", review: "На проверке", done: "Готово" };
@@ -10,6 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL ||
 
 function App() {
   const [api, setApi] = useState<Api | null>(null);
+  const [restoringSession, setRestoringSession] = useState(true);
   const [server, setServer] = useState(API_URL);
   const [token, setToken] = useState("");
   const [me, setMe] = useState<User | null>(null);
@@ -115,11 +117,38 @@ function App() {
     const [u, p, t] = await Promise.all([client.users(), client.projects(), client.tasks()]);
     setUsers(u); setProjects(p); setTasks(t);
   }, []);
+  useEffect(() => {
+    if (isTauri() || new URL(API_URL).origin !== window.location.origin) {
+      setRestoringSession(false);
+      return;
+    }
+    let cancelled = false;
+    const client = new Api(API_URL);
+    void client.me().then(async user => {
+      const [u, p, t] = await Promise.all([client.users(), client.projects(), client.tasks()]);
+      if (!cancelled) {
+        setUsers(u); setProjects(p); setTasks(t); setMe(user); setApi(client);
+      }
+    }).catch(() => { /* No valid session; show login form. */ })
+      .finally(() => { if (!cancelled) setRestoringSession(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function logout() {
+    if (api && !isTauri() && new URL(api.baseUrl).origin === window.location.origin) {
+      try { await api.closeSession(); } catch { /* Clear local state even if offline. */ }
+    }
+    setApi(null); setMe(null); setSelected(null); setShowSettings(false);
+  }
+
   async function login(e: FormEvent) {
     e.preventDefault(); setBusy(true); setError("");
     try {
-      const client = new Api(server, token);
-      const user = await client.me();
+      const bearerClient = new Api(server, token);
+      const user = await bearerClient.me();
+      const sameOriginWeb = !isTauri() && new URL(server).origin === window.location.origin;
+      if (sameOriginWeb) await bearerClient.openSession();
+      const client = sameOriginWeb ? new Api(server) : bearerClient;
       await load(client);
       setMe(user); setApi(client); setToken("");
     } catch (err) { setError(String(err)); } finally { setBusy(false); }
@@ -195,6 +224,7 @@ function App() {
       setActivity(await api.activity(task.id)); setError("");
     } catch (err) { setError(String(err)); }
   }
+  if (restoringSession) return <div className="login-wrap"><p className="muted">Восстанавливаем вход…</p></div>;
   if (!api) return <div className="login-wrap"><form className="login card" onSubmit={login}>
     <div className="brand brand-large"><span className="brand-icon"><Apple size={27}/></span><span>Eva<span className="brand-accent">DE</span></span></div>
     <p className="muted">Eva Desktop Edition. Из Рая выгнали. Зато задачи открываются.</p>
@@ -202,7 +232,7 @@ function App() {
     <label>Персональный токен<input required type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="Вставь свой токен"/></label>
     <button className="primary" disabled={busy}>{busy ? "Подключаемся…" : "Войти"} <ArrowRight size={16}/></button>
     {error && <p className="error">{error}</p>}
-    <small className="muted">Токен хранится только в памяти приложения до выхода.</small>
+    <small className="muted">В веб-версии вход сохраняется на 30 дней в защищённой от JavaScript cookie. Для работы по сети используй HTTPS.</small>
   </form></div>;
   const taskRow = (t: Task, depth = 0) => <div key={t.id} className={"task-row " + (selected === t.id ? "selected" : "")} style={{ paddingLeft: 14 + depth * 22 }} onClick={() => setSelected(t.id)}>
     <button className={"round-check " + (t.status === "done" ? "complete" : "")} title="Переключить выполнение" onClick={e => { e.stopPropagation(); void update(t.id, { status: t.status === "done" ? "new" : "done" }); }}>{t.status === "done" ? <Check size={14}/> : <Circle size={18}/>}</button>
@@ -223,7 +253,7 @@ function App() {
       <nav>{projects.map(p => <button key={p.id} className={view === "project:" + p.id ? "nav-active" : ""} onClick={() => setView("project:" + p.id)}><span className="project-dot"/> {p.name}</button>)}</nav>
       <div className="sidebar-bottom"><button onClick={() => setShowSettings(true)}><Settings2 size={16}/> Настройки / EvaTeam</button>
         <button onClick={() => void refresh()}><RefreshCw size={16} className={syncing ? "spin" : ""}/> {syncing ? "Обновление…" : "Обновить"}</button>
-        <div className="profile"><span className="avatar">{me?.name.slice(0, 1).toUpperCase()}</span><span className="profile-name">{me?.name}</span><button title="Выйти" onClick={() => { setApi(null); setMe(null); setSelected(null); }}><LogOut size={16}/></button></div>
+        <div className="profile"><span className="avatar">{me?.name.slice(0, 1).toUpperCase()}</span><span className="profile-name">{me?.name}</span><button title="Выйти" onClick={() => void logout()}><LogOut size={16}/></button></div>
       </div>
     </aside>
     <main className="workspace">
@@ -236,6 +266,7 @@ function App() {
     </main>
     {showSettings && <div className="settings-backdrop" onClick={() => setShowSettings(false)}><section className="settings-panel card" onClick={e => e.stopPropagation()}>
       <div className="section-title"><h2>Настройки EvaDE</h2><button onClick={() => setShowSettings(false)} aria-label="Закрыть"><X size={18}/></button></div>
+      <div className="detail-section"><p className="muted">Учётная запись: {me?.name} · Роль: {me?.is_admin ? "Администратор" : "Пользователь"}</p></div>
       <div className="detail-section"><h3>Персональный доступ к EvaTeam</h3>
         <p className="muted">{evaConnected ? "Ключ привязан к вашей учётке. Сам ключ не показывается." : "Ключ EvaTeam ещё не привязан."}</p>
         <p className="muted">{evaConfigured ? "Хранилище ключей доступно." : "Администратор сервера пока не настроил хранилище ключей."}</p>

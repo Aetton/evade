@@ -2,7 +2,7 @@ import hashlib
 import os
 from contextlib import asynccontextmanager
 from typing import Literal
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -12,6 +12,7 @@ from .models import Activity, Comment, EvaCredential, Project, SyncOutbox, Task,
 from .credentials import store as store_eva_credential, retrieve as retrieve_eva_credential
 from .eva_client import EvaError, probe as probe_eva
 from .ca_store import CertificateError, install as install_ca, remove as remove_ca, status as ca_status, MAX_PEM_BYTES
+from . import web_session
 
 STATUSES = ("new", "in_progress", "review", "done")
 
@@ -29,7 +30,7 @@ def db_session():
     with SessionLocal() as db:
         yield db
 
-def current_user(authorization: str | None = Header(default=None), db: Session = Depends(db_session)) -> User:
+def _user_by_bearer(authorization: str | None, db: Session) -> User:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Bearer token required")
     token = authorization[7:].strip()
@@ -40,6 +41,49 @@ def current_user(authorization: str | None = Header(default=None), db: Session =
     if user is None:
         raise HTTPException(401, "Invalid token")
     return user
+
+
+def current_user(request: Request, authorization: str | None = Header(default=None), db: Session = Depends(db_session)) -> User:
+    if authorization:
+        return _user_by_bearer(authorization, db)
+    cookie = request.cookies.get(web_session.SESSION_COOKIE)
+    if not cookie:
+        raise HTTPException(401, "Authentication required")
+    user = web_session.verify(cookie, lambda user_id: db.get(User, user_id))
+    if user is None:
+        raise HTTPException(401, "Session expired or invalid")
+    # A cookie authenticates automatically; reject cross-origin state changes.
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        from urllib.parse import urlsplit
+        origin = request.headers.get("origin", "")
+        try:
+            parsed = urlsplit(origin)
+        except ValueError:
+            raise HTTPException(403, "Invalid request origin")
+        if parsed.scheme not in ("http", "https") or parsed.netloc.lower() != request.headers.get("host", "").lower():
+            raise HTTPException(403, "Cross-origin cookie requests are not allowed")
+    return user
+
+
+@app.post("/auth/session")
+def create_web_session(response: Response, user: User = Depends(current_user)):
+    response.set_cookie(
+        key=web_session.SESSION_COOKIE,
+        value=web_session.create(user),
+        httponly=True,
+        secure=os.getenv("EVADE_COOKIE_SECURE", "false").lower() == "true",
+        samesite="lax",
+        max_age=web_session.SESSION_TTL,
+        path="/",
+    )
+    return {"user": as_user(user), "expires_in": web_session.SESSION_TTL}
+
+
+@app.delete("/auth/session", status_code=204)
+def delete_web_session(response: Response):
+    response.delete_cookie(web_session.SESSION_COOKIE, path="/", samesite="lax")
+
+
 
 def admin_user(user: User = Depends(current_user)) -> User:
     if not user.is_admin:
