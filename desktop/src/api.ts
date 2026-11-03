@@ -32,6 +32,12 @@ export class Api {
   inspectPin(pem: string) { return this.request<{hostname: string; sha256: string; expires_at: string}>("/admin/eva/pin/inspect", "POST", {pem}); }
   installPin(pem: string, sha256: string) { return this.request<{installed: boolean; hostname: string; sha256: string}>("/admin/eva/pin", "PUT", {pem, sha256}); }
   removePin() { return this.request<void>("/admin/eva/pin", "DELETE"); }
+  evaSyncStatus() { return this.request<{cached:number;legacy_tasks:number;legacy_outbox_pending:number;mode:string}>("/eva/sync/status"); }
+  evaSync(responsible: string[]) { return this.request<{synced:number;partial:string[];people:number;mode:string}>("/eva/sync", "POST", {responsible}); }
+  evaCachedTasks(responsible: string, offset = 0, limit = 50) {
+    const q = new URLSearchParams({responsible, offset: String(offset), limit: String(limit)});
+    return this.request<{items: Record<string, unknown>[]; offset:number; limit:number; has_more:boolean; cached:boolean}>("/eva/tasks/cached?" + q);
+  }
   evaSelf() { return this.request<{id: string; name: string}>("/eva/me"); }
   evaTasks(responsible: string, offset = 0, limit = 50, project = "", search = "") {
     const p = new URLSearchParams({responsible, offset: String(offset), limit: String(limit)});
