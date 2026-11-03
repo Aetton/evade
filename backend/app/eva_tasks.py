@@ -70,7 +70,7 @@ def attach(user_dep, db_dep):
     ):
         kwargs = {"slice": [offset, offset + limit], "fields": ["*"], "order_by": ["-cmf_created_at"]}
         if project:
-            kwargs["filter"] = ["parent", "==", code_ok(project)]
+            kwargs["filter"] = ["parent_id", "==", code_ok(project)]
         data = entries(invoke(key, "CmfTask.list", kwargs=kwargs))
         if search:
             q = search.casefold()
@@ -129,8 +129,9 @@ def attach(user_dep, db_dep):
         # EvaTeam update expects a CmfTask:<uuid> identifier, not a task code.
         item = plain(invoke(key, "CmfTask.get", kwargs={"filter": ["code", "==", code_ok(code)], "fields": ["*"]}))
         object_id = item.get("id") or item.get("cmf_id")
-        if not isinstance(object_id, str) or not object_id:
+        if object_id is None or object_id == "":
             raise HTTPException(502, "EvaTeam не вернула ID задачи для изменения")
+        object_id = str(object_id)
         if not object_id.startswith("CmfTask:"):
             object_id = "CmfTask:" + object_id
         return {"result": invoke(key, "CmfTask.update", args=[object_id], kwargs=changes)}
