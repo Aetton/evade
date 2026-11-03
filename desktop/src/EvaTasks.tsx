@@ -1,6 +1,7 @@
 import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Api } from "./api";
 import { groupEvaTasks } from "./evaStatus";
+import { buildProjectTree, ProjectTreeNode, SectionGroup } from "./evaProjects";
 import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star, Cloud, CloudOff, AlertTriangle, Clock } from "lucide-react";
 
 type Row = Record<string, unknown>;
@@ -55,6 +56,10 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   const peopleOffset = useRef(0);
   const peopleLoadingRef = useRef(false);
   const [project, setProject] = useState("");
+  const [groupBy, setGroupBy] = useState<"project"|"status">(() => {
+    try { return localStorage.getItem("evade:task-group:" + userId) === "status" ? "status" : "project"; }
+    catch { return "project"; }
+  });
   const [search, setSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
   const [selected, setSelected] = useState("");
@@ -149,8 +154,19 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         try { localStorage.setItem("evade:eva-self:" + userId, JSON.stringify(identity)); } catch { /* ignore */ }
       }
     }).catch(e => { if (active) setError("Не удалось связаться с EvaTeam: " + String(e)); });
-    void api.evaProjects().then(p => { if (active) setProjects(p.items); })
-      .catch(e => { if (active) setError(String(e)); });
+    void (async () => {
+      const collected: Row[] = [];
+      let hasMore = true;
+      while (hasMore && collected.length < 2000) {
+        const batch = await api.evaProjects(collected.length);
+        collected.push(...batch.items);
+        hasMore = batch.has_more && batch.items.length > 0;
+      }
+      if (active) {
+        setProjects(collected);
+        if (hasMore) setError("Показаны первые 2000 проектов. Часть структуры может отсутствовать.");
+      }
+    })().catch(e => { if (active) setError("Не удалось загрузить структуру проектов: " + String(e)); });
 
     return () => { active = false; };
   }, [api]);
@@ -278,6 +294,11 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   }
 
   const groupedTasks = groupEvaTasks(page.items);
+  const projectTree = buildProjectTree(page.items, projects);
+  function setGrouping(mode: "project"|"status") {
+    setGroupBy(mode);
+    try { localStorage.setItem("evade:task-group:" + userId, mode); } catch { /* ignored */ }
+  }
   function toggleStatus(key: string) {
     setCollapsedStatuses(current => {
       const updated = {...current, [key]: !current[key]};
@@ -287,6 +308,55 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     });
   }
   const statusSummary = groupedTasks.map(g => ({label:g.label,count:g.rows.length,key:g.key}));
+  function taskEntry(t: Row, index: number) {
+    return <button key={taskCode(t) || index}
+      className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
+      onClick={() => setSelected(taskCode(t))}>
+      <span className="eva-code">{taskCode(t)}</span>
+      <strong>{val(t.name) || "(без названия)"}</strong>
+      <span className="eva-row-meta">
+        <span>Приоритет: {val(t.priority) || "0"}</span>
+        {Boolean(t.cmf_modified_at) && <span><Clock size={12}/> {new Date(String(t.cmf_modified_at)).toLocaleDateString("ru-RU")}</span>}
+      </span>
+    </button>;
+  }
+  function statusSection(group: ReturnType<typeof groupEvaTasks>[number], prefix: string) {
+    const key = "status:" + prefix + ":" + group.key;
+    return <section key={key} className="eva-status-group">
+      <button type="button" className="eva-status-heading eva-subheading"
+        aria-expanded={!collapsedStatuses[key]} onClick={() => toggleStatus(key)}>
+        <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
+        <span>{group.label}</span><span className="eva-status-count">{group.rows.length}</span>
+      </button>
+      {!collapsedStatuses[key] && group.rows.map(taskEntry)}
+    </section>;
+  }
+  function listSection(section: SectionGroup, projectId: string) {
+    const key = "section:" + projectId + ":" + section.key;
+    return <section key={key} className="eva-project-section">
+      <button type="button" className="eva-project-section-heading" aria-expanded={!collapsedStatuses[key]}
+        onClick={() => toggleStatus(key)}>
+        <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
+        <span>{section.label}</span><span className="eva-status-count">{section.count}</span>
+      </button>
+      {!collapsedStatuses[key] && section.statusGroups.map(group => statusSection(group, key))}
+    </section>;
+  }
+  function projectSection(node: ProjectTreeNode, level = 0) {
+    const key = "project:" + node.id;
+    return <section className="eva-project-group" key={key}>
+      <button type="button" className="eva-project-heading" style={{paddingLeft: 16 + level * 13}}
+        aria-expanded={!collapsedStatuses[key]} title={node.path} onClick={() => toggleStatus(key)}>
+        <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
+        <span className="eva-project-title">{node.name}</span>
+        <span className="eva-status-count">{node.count}</span>
+      </button>
+      {!collapsedStatuses[key] && <>
+        {node.sections.map(section => listSection(section, node.id))}
+        {node.children.map(child => projectSection(child, level + 1))}
+      </>}
+    </section>;
+  }
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div className="eva-workspace">
     <header className="eva-head">
@@ -369,20 +439,19 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     </div>}
     <div className="eva-layout">
       <section className="eva-list">
-        <div className="eva-list-heading"><strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong><span>{loading ? "Загрузка…" : `Показано: ${page.items.length}`}</span></div>
-        {groupedTasks.map(group => <section key={group.key} className="eva-status-group">
-          <button type="button" className="eva-status-heading" aria-expanded={!collapsedStatuses[group.key]}
-            onClick={() => toggleStatus(group.key)}>
-            <span className="eva-status-arrow">{collapsedStatuses[group.key] ? "▸" : "▾"}</span>
-            <span>{group.label}</span><span className="eva-status-count">{group.rows.length}</span>
-          </button>
-          {!collapsedStatuses[group.key] && group.rows.map((t, i) =>
-            <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
-              onClick={() => setSelected(taskCode(t))}>
-              <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
-              <span className="eva-row-meta"><span>Приоритет: {val(t.priority) || "0"}</span>{Boolean(t.cmf_modified_at) && <span><Clock size={12}/> {new Date(String(t.cmf_modified_at)).toLocaleDateString("ru-RU")}</span>}</span>
-            </button>)}
-        </section>)}
+        <div className="eva-list-heading">
+          <strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong>
+          <span>{loading ? "Загрузка…" : `Задач: ${page.items.length}`}</span>
+        </div>
+        <div className="eva-group-switch" role="group" aria-label="Группировка задач">
+          <button type="button" className={groupBy === "project" ? "active" : ""}
+            onClick={() => setGrouping("project")}>Проекты и разделы</button>
+          <button type="button" className={groupBy === "status" ? "active" : ""}
+            onClick={() => setGrouping("status")}>Статусы</button>
+        </div>
+        {groupBy === "project"
+          ? projectTree.map(node => projectSection(node))
+          : groupedTasks.map(group => statusSection(group, "root"))}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
         <div className="eva-pager"><button disabled={page.offset === 0 || loading} onClick={() => void loadList(Math.max(0, page.offset - 50))}><ChevronLeft size={15}/> Назад</button><span>{page.offset + 1}–{page.offset + page.items.length}</span><button disabled={!page.has_more || loading} onClick={() => void loadList(page.offset + 50)}>Далее <ChevronRight size={15}/></button></div>
       </section>
