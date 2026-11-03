@@ -5,11 +5,14 @@ the authenticated caller's own encrypted EvaTeam bearer token.
 """
 import html
 import re
+from datetime import datetime, timezone
+from sqlalchemy import select, func
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .credentials import retrieve as retrieve_credential
+from .models import EvaTaskCache, Task, SyncOutbox, ExternalLink
 from .eva_client import EvaError, call as eva_call
 
 router = APIRouter(prefix="/eva", tags=["EvaTeam tasks"])
@@ -99,6 +102,86 @@ def attach(user_dep, db_dep):
                 return {"id": person["id"], "name": person.get("name") or login, "requires_selection": False}
         return {"id": None, "name": None, "requires_selection": True}
 
+
+    def update_cache(db: Session, user_id: str, responsible: str, items: list) -> None:
+        # Only snapshots from the authenticated caller's upstream token
+        # are stored, isolated by EvaDE user_id.
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            remote_id = item.get("id") or item.get("code")
+            if not isinstance(remote_id, str) or not remote_id:
+                continue
+            existing = db.scalar(select(EvaTaskCache).where(
+                EvaTaskCache.user_id == user_id, EvaTaskCache.remote_id == remote_id))
+            if existing is None:
+                db.add(EvaTaskCache(user_id=user_id, remote_id=remote_id,
+                                    responsible_id=responsible, snapshot=item))
+            else:
+                existing.snapshot = item
+                existing.responsible_id = responsible
+                existing.fetched_at = datetime.now(timezone.utc)
+        db.commit()
+
+    def fetch_person_page(key: str, responsible: str, offset: int, limit: int, project: str | None = None) -> list:
+        filters = [["responsible", "==", person_ok(responsible)]]
+        if project:
+            if not PROJECT_ID.fullmatch(project):
+                raise HTTPException(422, "Некорректный ID проекта EvaTeam")
+            filters.append(["project_id", "==", project])
+        kwargs = {"slice": [offset, offset + limit],
+                  "fields": ["id", "code", "name", "responsible", "status",
+                             "status_id", "cache_status_type", "priority",
+                             "project_id", "cmf_modified_at", "cmf_created_at"],
+                  "order_by": ["-cmf_created_at"],
+                  "filter": filters[0] if len(filters) == 1 else filters}
+        return entries(invoke(key, "CmfTask.list", kwargs=kwargs))
+
+    @router.get("/sync/status")
+    def sync_status(db: Session = Depends(db_dep), user=Depends(user_dep),
+                    key: str = Depends(token)):
+        cached = db.scalar(select(func.count(EvaTaskCache.id)).where(EvaTaskCache.user_id == user.id))
+        # Old local tasks/outbox are NOT synchronized: display this explicitly,
+        # never claim the database is fully reconciled when work remains.
+        legacy = db.scalar(select(func.count(Task.id)))
+        pending = db.scalar(select(func.count(SyncOutbox.id)).where(SyncOutbox.state == "pending"))
+        return {"cached": cached or 0, "legacy_tasks": legacy or 0,
+                "legacy_outbox_pending": pending or 0, "mode": "remote_write_through"}
+
+    class SyncSelection(BaseModel):
+        responsible: list[str] = Field(min_length=1, max_length=20)
+
+    @router.post("/sync")
+    def sync_selected(payload: SyncSelection, db: Session = Depends(db_dep),
+                      user=Depends(user_dep), key: str = Depends(token)):
+        people = list(dict.fromkeys(person_ok(pid) for pid in payload.responsible))
+        synced = 0
+        partial = []
+        for person in people:
+            offset = 0
+            while offset < 2000:
+                rows = fetch_person_page(key, person, offset, 100)
+                update_cache(db, user.id, person, rows)
+                synced += len(rows)
+                offset += len(rows)
+                if len(rows) < 100:
+                    break
+            else:
+                partial.append(person)
+        return {"synced": synced, "partial": partial, "people": len(people),
+                "mode": "remote_write_through"}
+
+    @router.get("/tasks/cached")
+    def cached_tasks(responsible: str, offset: int = Query(0, ge=0),
+                     limit: int = Query(50, ge=1, le=100),
+                     db: Session = Depends(db_dep), user=Depends(user_dep)):
+        person_ok(responsible)
+        stmt = select(EvaTaskCache).where(EvaTaskCache.user_id == user.id,
+                                          EvaTaskCache.responsible_id == responsible)
+        rows = list(db.scalars(stmt.order_by(EvaTaskCache.fetched_at.desc()).offset(offset).limit(limit + 1)))
+        return {"items": [row.snapshot for row in rows[:limit]], "offset": offset, "limit": limit,
+                "has_more": len(rows) > limit, "cached": True}
+
     @router.get("/tasks")
     def list_tasks(
         offset: int = Query(0, ge=0),
@@ -107,16 +190,11 @@ def attach(user_dep, db_dep):
         responsible: str = Query(..., min_length=1, max_length=150),
         search: str = Query("", max_length=200),
         key: str = Depends(token),
+        db: Session = Depends(db_dep),
+        user=Depends(user_dep),
     ):
-        filters = [["responsible", "==", person_ok(responsible)]]
-        if project:
-            if not PROJECT_ID.fullmatch(project):
-                raise HTTPException(422, "Некорректный ID проекта EvaTeam")
-            filters.append(["project_id", "==", project])
-        kwargs = {"slice": [offset, offset + limit],
-                  "fields": ["id", "code", "name", "responsible", "status", "status_id", "cache_status_type", "priority", "cmf_created_at"],
-                  "order_by": ["-cmf_created_at"], "filter": filters[0] if len(filters) == 1 else filters}
-        data = entries(invoke(key, "CmfTask.list", kwargs=kwargs))
+        data = fetch_person_page(key, responsible, offset, limit, project)
+        update_cache(db, user.id, responsible, data)
         has_more = len(data) == limit
         if search:
             q = search.casefold()

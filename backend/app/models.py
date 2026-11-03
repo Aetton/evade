@@ -82,3 +82,15 @@ class EvaCredential(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class EvaTaskCache(Base):
+    """Per-EvaDE-user snapshot of remote tasks. Never a second source of truth."""
+    __tablename__ = "eva_task_cache"
+    __table_args__ = (UniqueConstraint("user_id", "remote_id"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    remote_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    responsible_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
