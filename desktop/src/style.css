@@ -148,3 +148,28 @@
 .eva-task-open .eva-row-meta{font-size:11px;opacity:.72}
 .eva-task-node>.eva-status-count{flex:0 0 auto;margin-right:12px}
 .eva-task-toggle:focus-visible,.eva-task-open:focus-visible{outline:2px solid #ed8196;outline-offset:-2px;border-radius:4px}
+
+@media (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    ::-webkit-scrollbar { width: 12px; height: 12px; }
+    ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: #706b79;
+      border: 3px solid transparent;
+      background-clip: padding-box;
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb:hover { background-color: #a6a0ad; }
+    ::-webkit-scrollbar-thumb:active { background-color: #ed8196; }
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    * { scrollbar-width: thin; scrollbar-color: #706b79 transparent; }
+  }
+}
+
+.eva-layout > *, .eva-edit-grid > * {min-width:0}
+.eva-controls,.eva-head-actions {flex-wrap:wrap}
+.eva-task-toggle,.eva-status-arrow {display:inline-grid;place-items:center}
+.eva-workspace button svg {flex-shrink:0;vertical-align:middle}
+.eva-comment p,.eva-editor-heading h3 {overflow-wrap:anywhere}
+@media(max-width:740px){.eva-layout{grid-template-columns:minmax(0,1fr)} .eva-edit-grid{grid-template-columns:minmax(0,1fr)}}

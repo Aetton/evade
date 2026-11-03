@@ -279,6 +279,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   }
   function toggleFollow(id: string) {
     if (id === self?.id) return;
+    if(activePerson===id && followed.includes(id) && !canLeave())return;
     setFollowed(current => current.includes(id) ? current.filter(v => v !== id) : [...current, id]);
     if (activePerson === id && followed.includes(id)) setActivePerson(self?.id || "");
   }
@@ -290,19 +291,43 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     if (selected) void loadTask(selected);
   }, [selected, loadTask]);
 
+  function pendingChanges(): Record<string, unknown> {
+    if (!task) return {};
+    const changes: Record<string, unknown> = {};
+    if (editName.trim() !== val(task.name)) changes.name = editName.trim();
+    if (editText !== val(task.text)) changes.text = editText;
+    if (editStatus.trim() && editStatus.trim() !== status(task)) changes.status = editStatus.trim();
+    if (editPriority !== priority(task)) changes.priority = editPriority;
+    const original = task.responsible && typeof task.responsible === "object"
+      ? val((task.responsible as Row).id) : val(task.responsible_id);
+    if (editResponsible && editResponsible !== original) changes.responsible = editResponsible;
+    return changes;
+  }
+  const dirty = Object.keys(pendingChanges()).length > 0;
+  function canLeave() {
+    return !dirty || window.confirm("Закрыть карточку без сохранения правок?");
+  }
+  function openTask(code: string) {
+    if (code !== selected && canLeave()) setSelected(code);
+  }
+  const searchInput = useRef<HTMLInputElement>(null);
+  const editor = useRef<HTMLElement>(null);
+  useEffect(() => { if (editor.current) editor.current.scrollTop = 0; }, [selected]);
+  useEffect(() => {
+    const focusSearch = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.altKey || e.metaKey || e.isComposing ||
+          (e.target instanceof Element && e.target.closest("input,textarea,select,[contenteditable=true]"))) return;
+      e.preventDefault(); searchInput.current?.focus(); searchInput.current?.select();
+    };
+    document.addEventListener("keydown", focusSearch);
+    return () => document.removeEventListener("keydown", focusSearch);
+  }, []);
   async function saveEdit(e: FormEvent) {
     e.preventDefault();
     if (!selected || !task || !editName.trim() || offlineCache) return;
     setSaving(true); setError(""); setMessage("");
     try {
-      const changes: Record<string, unknown> = {};
-      if (editName.trim() !== val(task.name)) changes.name = editName.trim();
-      if (editText !== val(task.text)) changes.text = editText;
-      if (editStatus.trim() && editStatus.trim() !== status(task)) changes.status = editStatus.trim();
-      if (editPriority !== priority(task)) changes.priority = editPriority;
-      const original = task.responsible && typeof task.responsible === "object"
-        ? val((task.responsible as Row).id) : val(task.responsible_id);
-      if (editResponsible && editResponsible !== original) changes.responsible = editResponsible;
+      const changes = pendingChanges();
       if (!Object.keys(changes).length) { setMessage("Нет изменений"); return; }
       await api.updateEvaTask(selected, changes);
       setMessage("Изменения сохранены в EvaTeam.");
@@ -367,7 +392,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   function taskEntry(t: Row, index: number) {
     return <button key={taskCode(t) || index}
       className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
-      onClick={() => setSelected(taskCode(t))}>
+      onClick={() => openTask(taskCode(t))}>
       <span className="eva-code">{taskCode(t)}</span>
       <strong>{val(t.name) || "(без названия)"}</strong>
       <span className="eva-row-meta">
@@ -381,7 +406,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     return <section key={key} className="eva-status-group">
       <button type="button" className="eva-status-heading eva-subheading"
         aria-expanded={!collapsedStatuses[key]} onClick={() => toggleStatus(key)}>
-        <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
+        <span className="eva-status-arrow">{<ChevronRight size={15} style={{transform: collapsedStatuses[key] ? undefined : "rotate(90deg)"}}/>}</span>
         <span>{group.label}</span><span className="eva-status-count">{group.rows.length}</span>
       </button>
       {!collapsedStatuses[key] && group.rows.map(taskEntry)}
@@ -398,10 +423,10 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
           ? <button className="eva-task-toggle" type="button"
               aria-label={(collapsed ? "Развернуть " : "Свернуть ") + val(node.task.name)}
               aria-expanded={!collapsed} onClick={() => toggleStatus(key)}>
-              {collapsed ? "▸" : "▾"}
+              {<ChevronRight size={15} style={{transform: collapsed ? undefined : "rotate(90deg)"}}/>}
             </button>
           : <span className="eva-task-leaf" aria-hidden="true">·</span>}
-        <button type="button" className="eva-task-open" onClick={() => setSelected(code)}>
+        <button type="button" className="eva-task-open" onClick={() => openTask(code)}>
           <span className="eva-code">{code}</span>
           <strong>{val(node.task.name) || "(без названия)"}</strong>
           <span className="eva-row-meta">{val(node.task.status)} · Приоритет {val(node.task.priority) || "0"}</span>
@@ -416,7 +441,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     return <section key={key} className="eva-project-section">
       <button type="button" className="eva-project-section-heading" aria-expanded={!collapsedStatuses[key]}
         onClick={() => toggleStatus(key)}>
-        <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
+        <span className="eva-status-arrow">{<ChevronRight size={15} style={{transform: collapsedStatuses[key] ? undefined : "rotate(90deg)"}}/>}</span>
         <span>{section.label}</span><span className="eva-status-count">{section.count}</span>
       </button>
       {!collapsedStatuses[key] && section.roots.map(node => taskBranch(node))}
@@ -428,7 +453,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     return <section className="eva-project-group" key={key}>
       <button type="button" className="eva-project-heading" style={{paddingLeft: 16 + level * 13}}
         aria-expanded={!collapsed} title={node.path} onClick={() => toggleStatus(key, node.count === 0)}>
-        <span className="eva-status-arrow">{collapsed ? "▸" : "▾"}</span>
+        <span className="eva-status-arrow">{<ChevronRight size={15} style={{transform: collapsed ? undefined : "rotate(90deg)"}}/>}</span>
         <span className="eva-project-title">{node.name}</span>
         <span className="eva-status-count">{node.count}</span>
       </button>
@@ -463,14 +488,15 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     </section>}
     <div className="eva-person-tabs">
       <button type="button" className={activePerson === self?.id ? "active" : ""} disabled={!self}
-        onClick={() => setActivePerson(self?.id || "")}><UserRound size={15}/> Мои задачи</button>
+        onClick={() => {if(activePerson===self?.id || canLeave())setActivePerson(self?.id || "");}}><UserRound size={15}/> Мои задачи</button>
       {followed.map(id => <button type="button" key={id} className={activePerson === id ? "active" : ""}
-        onClick={() => setActivePerson(id)}><Users size={15}/>{nameFor(id)}</button>)}
+        onClick={() => {if(id===activePerson || canLeave())setActivePerson(id);}}><Users size={15}/>{nameFor(id)}</button>)}
       <button type="button" className="eva-manage-people" onClick={() => setManagePeople(v => !v)}>
         <Star size={15}/> {managePeople ? "Закрыть выбор" : "Сотрудники"}
       </button>
     </div>
     {self && <button type="button" className="secondary-action" onClick={() => {
+      if(!canLeave())return;
       setSelf(null); setActivePerson(""); setPage({items: [], offset: 0, limit: 50, has_more: false});
       setManagePeople(false);
       try { localStorage.removeItem("evade:eva-self:" + userId); } catch { /* ignore */ }
@@ -492,11 +518,11 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       <p className="muted">Закреплённые сотрудники доступны отдельными вкладками. Список сохраняется в этом браузере.</p>
     </section>}
     <div className="eva-controls">
-      <select value={project} onChange={e => {setProject(e.target.value);setSelected("");}}>
+      <select value={project} onChange={e => {if(canLeave()){setProject(e.target.value);setSelected("");}}}>
         <option value="">Все доступные проекты</option>
         {projects.map(p => <option key={projectId(p) || projectCode(p)} value={projectId(p)}>{val(p.name) || projectCode(p)}</option>)}
       </select>
-      <form onSubmit={e => {e.preventDefault();setSearch(draftSearch);}}><input placeholder="Поиск в загруженной странице…" value={draftSearch} onChange={e => setDraftSearch(e.target.value)}/><button type="submit">Найти</button></form>
+      <form onSubmit={e => {e.preventDefault();if(search===draftSearch || canLeave())setSearch(draftSearch);}}><input ref={searchInput} aria-label="Поиск задач" onKeyDown={e => {if(e.key==="Escape" && (!search || canLeave())){setDraftSearch("");setSearch("");}}} placeholder="Поиск задач (/)…" value={draftSearch} onChange={e => setDraftSearch(e.target.value)}/><button type="submit">Найти</button></form>
       <button disabled={offlineCache} onClick={() => setNewTask(v => !v)}><Plus size={16}/> Новая задача</button>
     </div>
     {error && <div className="eva-alert" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
@@ -531,9 +557,9 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
         <div className="eva-pager"><span>Загружено задач: {page.items.length}</span>{page.has_more && <button disabled={loading} onClick={() => void loadList(page.items.length)}>{loading ? "Загрузка…" : "Загрузить ещё"} <ChevronRight size={15}/></button>}</div>
       </section>
-      <section className="eva-editor">
+      <section ref={editor} className="eva-editor">
         {!task ? <p className="muted eva-empty">Выбери задачу для просмотра и редактирования.</p> : <>
-          <div className="eva-editor-heading"><h3>{selected}</h3><button onClick={() => setSelected("")}><X size={16}/></button></div>
+          <div className="eva-editor-heading"><h3>{selected}</h3><button onClick={() => openTask("")}><X size={16}/></button></div>
           <form onSubmit={saveEdit} className="eva-edit-form">
             <label>Название<input value={editName} onChange={e => setEditName(e.target.value)}/></label>
             <label>Описание<textarea rows={5} value={editText} onChange={e => setEditText(e.target.value)}/></label>
@@ -568,7 +594,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
                   }}>{val(person.name) || val(person.login)} <small>{val(person.login)}</small></button>)}
               </div>}
             </div>
-            <button className="eva-primary" disabled={saving || offlineCache || !editName.trim()}><Save size={16}/> Сохранить изменения</button>
+            <button className="eva-primary" disabled={saving || offlineCache || !editName.trim() || !dirty}><Save size={16}/> Сохранить изменения</button>
           </form>
           <div className="eva-comments"><h3><MessageSquare size={15}/> Комментарии ({comments.length})</h3>
             {comments.map((c,i) => <div className="eva-comment" key={i}><small>{val(c.cmf_author) || val(c.author) || "Автор"}</small><p>{richText(c.text)}</p></div>)}
