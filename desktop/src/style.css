@@ -233,3 +233,12 @@
 .lab-children button{width:100%;text-align:left;margin:5px 0}.lab-children small,.lab-edit-actions button{margin-left:auto}
 .lab-edit-actions{position:sticky;bottom:0;background:var(--lab-pane)}
 @media(max-width:600px){.evade-unified .lab-shell .eva-head{grid-template-columns:minmax(0,1fr)}}
+.inspector-grip{display:none;position:relative;z-index:2;cursor:col-resize;touch-action:none;user-select:none}
+.inspector-grip:hover,.inspector-grip:focus-visible{background:var(--lab-accent,var(--accent))}
+
+.evade-unified .lab-shell[data-open=false]{grid-template-columns:minmax(0,1fr)}
+.lab-shell[data-open=false] .eva-editor{display:none}
+@media(min-width:901px){
+.evade-unified .lab-shell[data-open=true]{grid-template-columns:minmax(0,1fr) 7px var(--inspector-width,450px)}
+.lab-shell[data-open=true] .inspector-grip{display:block}
+}

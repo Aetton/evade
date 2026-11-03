@@ -1,3 +1,4 @@
+import { bindInspector } from "./inspectorWidth";
 import { createPortal } from "react-dom";
 import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Api } from "./api";
@@ -64,6 +65,11 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
   });
   const [search, setSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
+  const shellRef = useRef<HTMLDivElement>(null);
+  const gripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (shellRef.current && gripRef.current) return bindInspector(shellRef.current, gripRef.current);
+  }, []);
   const [selected, setSelected] = useState("");
   const [task, setTask] = useState<Row | null>(null);
   const [editName, setEditName] = useState("");
@@ -489,7 +495,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     return !!ref && (ref === task.id || ref === selected);
   });
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
-  return <div className="eva-workspace lab-shell" data-compact={compact}><div className="lab-center">
+  return <div ref={shellRef} data-open={!!selected} className="eva-workspace lab-shell" data-compact={compact}><div className="lab-center" data-inspector-center>
     {navHost && createPortal(<><button className={!teamActive?"nav-active":""} onClick={()=>switchPerson(self?.id || "")}><UserRound size={16}/> Мои задачи</button><button className={teamActive?"nav-active":""} onClick={()=>followed.length ? switchPerson(followed[0]) : setManagePeople(true)}><Users size={16}/> Команда</button></>,navHost)}
     <header className="eva-head">
       <div><small>EVADE / РАБОЧЕЕ ПРОСТРАНСТВО</small><h1>{activePerson === self?.id ? "Мои задачи" : "Команда / " + nameFor(activePerson)}</h1>
@@ -585,9 +591,10 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
         <option value="">Все доступные проекты</option>
         {projects.map(p => <option key={projectId(p) || projectCode(p)} value={projectId(p)}>{val(p.name) || projectCode(p)}</option>)}
       </select></label><label>Тема <select value={theme} onChange={e=>setTheme(e.target.value)}><option value="night">Neon noir</option><option value="oxide">Cobalt</option><option value="paper">Paper</option></select></label><label>Плотность <select value={compact?"compact":"normal"} onChange={e=>setCompact(e.target.value==="compact")}><option value="normal">Обычная</option><option value="compact">Компактная</option></select></label></footer></div>
+      <div ref={gripRef} className="inspector-grip" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Ширина карточки задачи" title="Изменить ширину карточки" />
       <section ref={editor} className="eva-editor" data-selected={!!selected}>
-        {!task ? <p className="muted eva-empty">Выбери задачу для просмотра и редактирования.</p> : <>
-          <div className="eva-editor-heading"><span className="lab-edit-badge">Редактирование</span><small>{selected}</small><button onClick={() => openTask("")}><X size={16}/></button></div>
+        {!task ? <div className="eva-editor-heading"><h3>{selected}</h3><button aria-label="Закрыть карточку" onClick={()=>openTask("")}><X size={16}/></button></div> : <>
+          <div className="eva-editor-heading"><span className="lab-edit-badge">Редактирование</span><small>{selected}</small><button aria-label="Закрыть карточку" title="Закрыть карточку" onClick={() => openTask("")}><X size={16}/></button></div>
           <form id="eva-task-edit" onSubmit={saveEdit} className="eva-edit-form"><small>ЗАДАЧА / {selected}</small>
             <label className="lab-title"><input aria-label="Название задачи" value={editName} onChange={e => setEditName(e.target.value)}/></label>
             
