@@ -131,7 +131,7 @@ def attach(user_dep, db_dep):
             filters.append(["project_id", "==", project])
         kwargs = {"slice": [offset, offset + limit],
                   "fields": ["id", "code", "name", "responsible", "status",
-                             "status_id", "cache_status_type", "priority",
+                             "status_id", "cache_status_type", "priority", "lists", "parent_task_id", "parent_id",
                              "project_id", "cmf_modified_at", "cmf_created_at"],
                   "order_by": ["-cmf_created_at"],
                   "filter": filters[0] if len(filters) == 1 else filters}
@@ -207,7 +207,9 @@ def attach(user_dep, db_dep):
         limit: int = Query(100, ge=1, le=100),
         key: str = Depends(token),
     ):
-        return {"items": entries(invoke(key, "CmfProject.list", kwargs={"slice": [offset, offset + limit], "fields": ["*"]}))}
+        rows = entries(invoke(key, "CmfProject.list", kwargs={"slice": [offset, offset + limit],
+                                                       "fields": ["id", "code", "name", "parent_id"]}))
+        return {"items": rows, "has_more": len(rows) == limit, "offset": offset}
 
     @router.get("/people")
     def people(
