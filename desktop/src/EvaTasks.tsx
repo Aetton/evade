@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Api } from "./api";
 import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star } from "lucide-react";
 
@@ -39,6 +39,10 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   const [people, setPeople] = useState<Row[]>([]);
   const [peopleHasMore, setPeopleHasMore] = useState(false);
   const [peopleLoading, setPeopleLoading] = useState(false);
+  const [debouncedPeopleSearch, setDebouncedPeopleSearch] = useState("");
+  const peopleRequest = useRef(0);
+  const peopleOffset = useRef(0);
+  const peopleLoadingRef = useRef(false);
   const [project, setProject] = useState("");
   const [search, setSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
@@ -86,9 +90,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     }).catch(e => { if (active) setError("Не удалось связаться с EvaTeam: " + String(e)); });
     void api.evaProjects().then(p => { if (active) setProjects(p.items); })
       .catch(e => { if (active) setError(String(e)); });
-    void api.evaPeople().then(p => {
-      if (active) { setPeople(p.items); setPeopleHasMore(p.has_more); }
-    }).catch(e => { if (active) setError(String(e)); });
+
     return () => { active = false; };
   }, [api]);
   useEffect(() => {
@@ -108,15 +110,54 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     try { localStorage.setItem("evade:eva-team:" + userId, JSON.stringify(followed)); }
     catch { /* Storage may be disabled. */ }
   }, [userId, followed]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedPeopleSearch(peopleSearch.trim()), 350);
+    return () => window.clearTimeout(timer);
+  }, [peopleSearch]);
+  useEffect(() => {
+    const request = ++peopleRequest.current;
+    peopleOffset.current = 0;
+    peopleLoadingRef.current = true;
+    setPeopleLoading(true);
+    setPeopleHasMore(false);
+    setPeople([]);
+    void api.evaPeople(0, debouncedPeopleSearch).then(result => {
+      if (request !== peopleRequest.current) return;
+      setPeople(result.items);
+      peopleOffset.current = result.items.length;
+      setPeopleHasMore(result.has_more);
+    }).catch(e => {
+      if (request === peopleRequest.current) setError("Не удалось найти сотрудников: " + String(e));
+    }).finally(() => {
+      if (request === peopleRequest.current) {
+        peopleLoadingRef.current = false;
+        setPeopleLoading(false);
+      }
+    });
+    return () => { peopleRequest.current++; };
+  }, [api, debouncedPeopleSearch]);
   async function loadMorePeople() {
-    if (!peopleHasMore || peopleLoading) return;
+    if (!peopleHasMore || peopleLoadingRef.current) return;
+    const request = peopleRequest.current;
+    peopleLoadingRef.current = true;
     setPeopleLoading(true);
     try {
-      const result = await api.evaPeople(people.length);
+      const result = await api.evaPeople(peopleOffset.current, debouncedPeopleSearch);
+      if (request !== peopleRequest.current) return;
+      peopleOffset.current += result.items.length;
       setPeople(current => [...current, ...result.items.filter(p => !current.some(c => val(c.id) === val(p.id)))]);
       setPeopleHasMore(result.has_more);
-    } catch (e) { setError(String(e)); }
-    finally { setPeopleLoading(false); }
+    } catch (e) { if (request === peopleRequest.current) setError(String(e)); }
+    finally {
+      if (request === peopleRequest.current) {
+        peopleLoadingRef.current = false;
+        setPeopleLoading(false);
+      }
+    }
+  }
+  function onPeopleScroll(e: UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) void loadMorePeople();
   }
   function toggleFollow(id: string) {
     if (id === self?.id) return;
@@ -124,8 +165,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     if (activePerson === id && followed.includes(id)) setActivePerson(self?.id || "");
   }
   const nameFor = (id: string) => val(people.find(p => val(p.id) === id)?.name) || id;
-  const availablePeople = people.filter(p => val(p.id) !== self?.id &&
-    (val(p.name) + " " + val(p.login) + " " + val(p.email)).toLowerCase().includes(peopleSearch.toLowerCase()));
+  const availablePeople = people.filter(p => val(p.id) !== self?.id);
 
   useEffect(() => {
     setTask(null);
@@ -175,6 +215,14 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     finally { setSaving(false); }
   }
 
+  const statusGroups = new Map<string, Row[]>();
+  for (const item of page.items) {
+    const group = status(item).trim() || "Без статуса";
+    const rows = statusGroups.get(group) || [];
+    rows.push(item);
+    statusGroups.set(group, rows);
+  }
+  const groupedTasks = [...statusGroups.entries()].sort(([a], [b]) => a.localeCompare(b, "ru"));
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div className="eva-workspace">
     <header className="eva-head">
@@ -186,13 +234,11 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       <p className="muted">Ваша EvaTeam не отдаёт владельца API-токена. Найди свою учётную запись в справочнике. Выбор запомнится в этом браузере.</p>
       <input aria-label="Найти себя в EvaTeam" placeholder="Имя или логин…" value={peopleSearch}
         onChange={e => setPeopleSearch(e.target.value)} />
-      <div className="eva-person-options">
-        {people.filter(p => (val(p.name) + " " + val(p.login)).toLowerCase().includes(peopleSearch.toLowerCase()))
-          .map((p, i) => <button type="button" key={val(p.id) || i}
+      <div className="eva-person-options" onScroll={onPeopleScroll}>
+        {people.map((p, i) => <button type="button" key={val(p.id) || i}
             onClick={() => chooseSelf(p)}>{val(p.name) || val(p.login) || val(p.id)} · {val(p.login)}</button>)}
       </div>
-      {peopleHasMore && <button type="button" disabled={peopleLoading}
-        onClick={() => void loadMorePeople()}>{peopleLoading ? "Загружаю…" : "Загрузить ещё сотрудников"}</button>}
+      {peopleLoading && <p className="muted">Ищу сотрудников…</p>}
     </section>}
     <div className="eva-person-tabs">
       <button type="button" className={activePerson === self?.id ? "active" : ""} disabled={!self}
@@ -211,7 +257,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     {self && managePeople && <section className="eva-person-picker">
       <input aria-label="Поиск сотрудников" placeholder="Найти сотрудника по имени или логину…"
         value={peopleSearch} onChange={e => setPeopleSearch(e.target.value)}/>
-      <div className="eva-person-options">
+      <div className="eva-person-options" onScroll={onPeopleScroll}>
         {availablePeople.map((p, i) => {
           const id = val(p.id);
           return <label key={id || i}><input type="checkbox" checked={followed.includes(id)}
@@ -221,9 +267,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         })}
         {!availablePeople.length && <p className="muted">Сотрудники не найдены в загруженном справочнике.</p>}
       </div>
-      {peopleHasMore && <button type="button" disabled={peopleLoading} onClick={() => void loadMorePeople()}>
-        {peopleLoading ? "Загружаю…" : "Загрузить ещё сотрудников"}
-      </button>}
+      {peopleLoading && <p className="muted">Ищу сотрудников…</p>}
       <p className="muted">Закреплённые сотрудники доступны отдельными вкладками. Список сохраняется в этом браузере.</p>
     </section>}
     <div className="eva-controls">
@@ -246,10 +290,13 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     <div className="eva-layout">
       <section className="eva-list">
         <div className="eva-list-heading"><strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong><span>{loading ? "Загрузка…" : `Показано: ${page.items.length}`}</span></div>
-        {page.items.map((t, i) => <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")} onClick={() => setSelected(taskCode(t))}>
-          <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
-          <span className="eva-row-meta">{val(t.status)} · {val(t.responsible) || "Без исполнителя"}</span>
-        </button>)}
+        {groupedTasks.map(([group, tasks]) => <details key={group} className="eva-status-group" open>
+          <summary><span>{group}</span><span className="eva-status-count">{tasks.length}</span></summary>
+          {tasks.map((t, i) => <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")} onClick={() => setSelected(taskCode(t))}>
+            <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
+            <span className="eva-row-meta">{val(t.responsible) || "Без исполнителя"}</span>
+          </button>)}
+        </details>)}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
         <div className="eva-pager"><button disabled={page.offset === 0 || loading} onClick={() => void loadList(Math.max(0, page.offset - 50))}><ChevronLeft size={15}/> Назад</button><span>{page.offset + 1}–{page.offset + page.items.length}</span><button disabled={!page.has_more || loading} onClick={() => void loadList(page.offset + 50)}>Далее <ChevronRight size={15}/></button></div>
       </section>

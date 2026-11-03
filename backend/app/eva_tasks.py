@@ -134,10 +134,19 @@ def attach(user_dep, db_dep):
     @router.get("/people")
     def people(
         offset: int = Query(0, ge=0),
+        name: str = Query("", max_length=100),
         limit: int = Query(100, ge=1, le=100),
         key: str = Depends(token),
     ):
-        items = entries(invoke(key, "CmfPerson.list", kwargs={"slice": [offset, offset + limit], "fields": ["id", "name", "login", "email"]}))
+        kwargs = {"slice": [offset, offset + limit], "fields": ["id", "name", "login", "email"]}
+        term = name.strip()
+        if term:
+            if len(term) < 2:
+                raise HTTPException(422, "Введи минимум два символа имени")
+            if any(c in term for c in ("%", "_", chr(92))):
+                raise HTTPException(422, "Недопустимые символы поискового запроса")
+            kwargs["filter"] = ["name", "LIKE", "%" + term + "%"]
+        items = entries(invoke(key, "CmfPerson.list", kwargs=kwargs))
         return {"items": items, "has_more": len(items) == limit}
 
     @router.get("/tasks/{code}")
