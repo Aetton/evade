@@ -368,7 +368,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
             <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
               onClick={() => setSelected(taskCode(t))}>
               <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
-              <span className="eva-row-meta"><span>Приоритет: {val(t.priority) || "0"}</span>{t.cmf_modified_at && <span><Clock size={12}/> {new Date(String(t.cmf_modified_at)).toLocaleDateString("ru-RU")}</span>}</span>
+              <span className="eva-row-meta"><span>Приоритет: {val(t.priority) || "0"}</span>{Boolean(t.cmf_modified_at) && <span><Clock size={12}/> {new Date(String(t.cmf_modified_at)).toLocaleDateString("ru-RU")}</span>}</span>
             </button>)}
         </section>)}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
