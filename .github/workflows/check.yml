@@ -39,6 +39,12 @@ jobs:
           test -f .secrets/admin-token
           curl -fsS http://127.0.0.1:8080/ | grep -q EvaDE
           curl -fsS -H "Authorization: Bearer $(cat .secrets/admin-token)" http://127.0.0.1:8000/me | grep -q '"is_admin":true'
+      - name: Verify browser session via Nginx
+        run: |
+          curl -fsS -c /tmp/evade-cookies -H "Authorization: Bearer $(cat .secrets/admin-token)" -X POST http://127.0.0.1:8080/auth/session | grep -q expires_in
+          curl -fsS -b /tmp/evade-cookies http://127.0.0.1:8080/me | grep -q '"is_admin":true'
+          curl -fsS -b /tmp/evade-cookies -H "Origin: http://127.0.0.1:8080" -H "Content-Type: application/json" -d '{"name":"Cookie smoke"}' http://127.0.0.1:8080/projects | grep -q 'Cookie smoke'
+          curl -fsS -b /tmp/evade-cookies -X DELETE http://127.0.0.1:8080/auth/session
       - name: Verify idempotency
         run: |
           before="$(cat .secrets/admin-token)"

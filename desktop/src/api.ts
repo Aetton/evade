@@ -11,11 +11,11 @@ export type Comment = { id: string; task_id: string; author_id: string; body: st
 export type Activity = { id: string; actor_id: string | null; kind: string; detail: Record<string, unknown>; created_at: string };
 
 export class Api {
-  constructor(public baseUrl: string, private token: string) {}
+  constructor(public baseUrl: string, private token = "") {}
   async request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
     const response = await fetch(this.baseUrl.replace(/\/$/, "") + path, {
       method,
-      headers: { Authorization: "Bearer " + this.token, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      headers: { ...(this.token ? { Authorization: "Bearer " + this.token } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     if (!response.ok) {
@@ -26,6 +26,8 @@ export class Api {
     if (response.status === 204) return undefined as T;
     return response.json();
   }
+  openSession() { return this.request<{user: User; expires_in: number}>("/auth/session", "POST"); }
+  closeSession() { return this.request<void>("/auth/session", "DELETE"); }
   caStatus() { return this.request<{installed: boolean; certificates: number | null; warning?: string}>("/admin/eva/ca"); }
   installCa(pem: string) { return this.request<{installed: boolean; certificates: number}>("/admin/eva/ca", "PUT", {pem}); }
   removeCa() { return this.request<void>("/admin/eva/ca", "DELETE"); }

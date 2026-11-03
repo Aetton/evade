@@ -138,3 +138,7 @@ EVADE_EVA_URL=https://eva.example.internal/api/
 ### Corporate CA without shell access
 
 Login as the EvaDE administrator, open **Настройки → Администратор · CA EvaTeam**, select a public PEM-encoded CA certificate (or PEM bundle), and click **Установить CA**. The API validates CA BasicConstraints, expiry, and parses the certificate bundle before atomically saving it to the persistent `evade-certs` Docker volume. It applies to new outgoing EvaTeam TLS connections immediately, without restarting the server or disabling normal system trust verification. The page is admin-only, and the backend checks `User.is_admin` on every CA operation. Existing per-user EvaTeam keys are not changed. The uploaded CA is a trust anchor, so only upload CA certificates from your organization.
+
+### Persistent browser login
+
+The web UI creates a signed 30-day HttpOnly, SameSite=Lax cookie after validating a user's personal EvaDE bearer token. Refreshing the browser reuses the cookie; logout clears it. The cookie contains **no bearer token** and is bound to the current user's token hash, so token rotation invalidates it. Desktop/Tauri continues to use in-memory bearer authentication, and API clients can continue to use Authorization headers. Cookie-authenticated writes require a matching same-origin Origin header. To deploy behind HTTPS set `EVADE_COOKIE_SECURE=true` in the API environment and restart the API; plain HTTP must not be used on untrusted networks.
