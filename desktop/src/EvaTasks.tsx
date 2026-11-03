@@ -2,7 +2,7 @@ import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "re
 import { Api } from "./api";
 import { groupEvaTasks } from "./evaStatus";
 import { buildProjectTree, ProjectTreeNode, SectionGroup } from "./evaProjects";
-import { ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star, Cloud, CloudOff, AlertTriangle, Clock } from "lucide-react";
+import { ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star, Cloud, CloudOff, Clock } from "lucide-react";
 
 type Row = Record<string, unknown>;
 type Page = { items: Row[]; offset: number; limit: number; has_more: boolean };
@@ -410,11 +410,6 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         <button className="secondary-action" onClick={() => void loadList(0)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
       </div>
     </header>
-    {syncState && (syncState.legacy_tasks > 0 || syncState.legacy_outbox_pending > 0) &&
-      <div className="eva-sync-warning" role="status"><AlertTriangle size={16}/><span>
-        Старые локальные данные ещё не сопоставлены с EvaTeam: {syncState.legacy_tasks} задач,
-        {syncState.legacy_outbox_pending} операций в очереди. Автоматический импорт отключён во избежание дублей и конфликтов.
-      </span></div>}
     {!self && <section className="eva-person-picker">
       <h3>Выбери себя в EvaTeam</h3>
       <p className="muted">Ваша EvaTeam не отдаёт владельца API-токена. Найди свою учётную запись в справочнике. Выбор запомнится в этом браузере.</p>
