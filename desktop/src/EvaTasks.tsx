@@ -38,6 +38,26 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
       return Array.isArray(saved) ? saved.filter((v: unknown) => typeof v === "string") : [];
     } catch { return []; }
   });
+  const [teamSection, setTeamSection] = useState(false);
+  const [teamNames, setTeamNames] = useState<Record<string,string>>(() => {
+    try { return JSON.parse(localStorage.getItem("evade:team-names:"+userId) || "{}") || {}; }
+    catch { return {}; }
+  });
+  useEffect(() => {
+    let active = true;
+    Promise.all(followed.map(async id => {
+      try {
+        const row = await api.request<Row>("/eva/people/by-id?id="+encodeURIComponent(id));
+        return [id, val(row.login) || val(row.name)] as const;
+      } catch { return [id, ""] as const; }
+    })).then(rows => {
+      if (active) setTeamNames(previous => ({...previous, ...Object.fromEntries(rows.filter(([,name])=>name))}));
+    });
+    return () => { active=false; };
+  }, [api, followed]);
+  useEffect(() => {
+    try { localStorage.setItem("evade:team-names:"+userId,JSON.stringify(teamNames)); } catch {}
+  }, [teamNames,userId]);
   const [managePeople, setManagePeople] = useState(false);
   const [peopleSearch, setPeopleSearch] = useState("");
 
@@ -221,8 +241,8 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     return () => { active = false; };
   }, [api]);
   useEffect(() => {
-    if (self && !activePerson) setActivePerson(self.id);
-  }, [self, activePerson]);
+    if (self && !activePerson && !teamSection) setActivePerson(self.id);
+  }, [self, activePerson, teamSection]);
   function chooseSelf(p: Row) {
     const id = val(p.id);
     if (!/^(Person|CmfPerson):[a-zA-Z0-9_-]+$/.test(id)) return;
@@ -231,7 +251,9 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     try { localStorage.setItem("evade:eva-self:" + userId, JSON.stringify(identity)); } catch { /* ignore */ }
   }
   useEffect(() => {
-    if (activePerson) { setSelected(""); void loadList(0); }
+    setSelected("");
+    if (activePerson) void loadList(0);
+    else setPage({items: [], offset: 0, limit: 50, has_more: false});
   }, [activePerson, loadList]);
   useEffect(() => {
     try { localStorage.setItem("evade:eva-team:" + userId, JSON.stringify(followed)); }
@@ -290,9 +312,13 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     if (id === self?.id) return;
     if(activePerson===id && followed.includes(id) && !canLeave())return;
     setFollowed(current => current.includes(id) ? current.filter(v => v !== id) : [...current, id]);
-    if (activePerson === id && followed.includes(id)) setActivePerson(self?.id || "");
+    if (activePerson === id && followed.includes(id)) setActivePerson(followed.find(v=>v!==id) || "");
+    else if (!activePerson && !followed.includes(id)) setActivePerson(id);
   }
-  const nameFor = (id: string) => val(people.find(p => val(p.id) === id)?.name) || id;
+  const nameFor = (id: string) => {
+    const person = people.find(p => val(p.id) === id);
+    return val(person?.login) || teamNames[id] || val(person?.name) || "Сотрудник недоступен";
+  };
   const availablePeople = people.filter(p => val(p.id) !== self?.id);
 
   useEffect(() => {
@@ -485,10 +511,8 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     </section>;
   }
   const navHost = document.getElementById("eva-task-navigation");
-  const teamActive = Boolean(activePerson && activePerson !== self?.id);
-  function switchPerson(id: string) {
-    if (id && (activePerson === id || canLeave())) setActivePerson(id);
-  }
+  const teamActive = teamSection;
+  
   const directChildren = page.items.filter(row => {
     if (!task) return false;
     const parent = row.parent_task_id || row.parent_id;
@@ -497,9 +521,9 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
   });
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div ref={shellRef} data-open={!!selected} className="eva-workspace lab-shell" data-compact={compact}><div className="lab-center" data-inspector-center>
-    {navHost && createPortal(<><button className={!teamActive?"nav-active":""} onClick={()=>switchPerson(self?.id || "")}><UserRound size={16}/> Мои задачи</button><button className={teamActive?"nav-active":""} onClick={()=>followed.length ? switchPerson(followed[0]) : setManagePeople(true)}><Users size={16}/> Команда</button></>,navHost)}
+    {navHost && createPortal(<><button className={!teamActive?"nav-active":""} onClick={()=>{if(activePerson!==self?.id && !canLeave())return;setTeamSection(false);setManagePeople(false);setActivePerson(self?.id || "");}}><UserRound size={16}/> Мои задачи</button><button className={teamActive?"nav-active":""} onClick={()=>{if(!teamSection && !canLeave())return;setTeamSection(true);setManagePeople(true);if(!teamSection)setActivePerson(followed[0] || "");}}><Users size={16}/> Команда</button></>,navHost)}
     <header className="eva-head">
-      <div><small>EVADE / РАБОЧЕЕ ПРОСТРАНСТВО</small><h1>{activePerson === self?.id ? "Мои задачи" : "Команда / " + nameFor(activePerson)}</h1>
+      <div><small>EVADE / РАБОЧЕЕ ПРОСТРАНСТВО</small><h1>{teamSection ? (activePerson ? "Команда / "+nameFor(activePerson) : "Моя команда") : "Мои задачи"}</h1>
         <div className="eva-sync-caption">{offlineCache ? <><CloudOff size={13}/> Сохранённая копия · только просмотр</> :
           <><Cloud size={13}/> Данные EvaTeam · {lastSync ? "проверены " + lastSync.toLocaleTimeString("ru-RU", {hour:"2-digit",minute:"2-digit"}) : "подключение"}</>}</div>
       </div>
@@ -524,29 +548,27 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
       </div>
       {peopleLoading && <p className="muted">Ищу сотрудников…</p>}
     </section>}
-    <div className="eva-person-tabs">
-      <button type="button" className={activePerson === self?.id ? "active" : ""} disabled={!self}
-        onClick={() => {if(activePerson===self?.id || canLeave())setActivePerson(self?.id || "");}}><UserRound size={15}/> Мои задачи</button>
+    {teamSection && <div className="eva-person-tabs">
       {followed.map(id => <button type="button" key={id} className={activePerson === id ? "active" : ""}
         onClick={() => {if(id===activePerson || canLeave())setActivePerson(id);}}><Users size={15}/>{nameFor(id)}</button>)}
       <button type="button" className="eva-manage-people" onClick={() => setManagePeople(v => !v)}>
-        <Star size={15}/> {managePeople ? "Закрыть выбор" : "Сотрудники"}
+        <Star size={15}/> {managePeople ? "Скрыть состав" : "Состав команды"}
       </button>
-    </div>
+    </div>}
     {!personId && self && managePeople && <button type="button" className="secondary-action" onClick={() => {
       if(!canLeave())return;
       setSelf(null); setActivePerson(""); setPage({items: [], offset: 0, limit: 50, has_more: false});
       setManagePeople(false);
       try { localStorage.removeItem("evade:eva-self:" + userId); } catch { /* ignore */ }
     }}>Сменить мою учётку EvaTeam</button>}
-    {self && managePeople && <section className="eva-person-picker">
+    {self && teamSection && managePeople && <section className="eva-person-picker"><h3>Состав команды</h3>{followed.length ? <div className="eva-person-tabs">{followed.map(id=><button key={id} type="button" aria-label={"Убрать из команды: "+nameFor(id)} title="Убрать из команды" onClick={()=>toggleFollow(id)}>{nameFor(id)} <X size={14}/></button>)}</div> : <p className="muted">Пока никого нет. Найди коллегу и отметь его в списке.</p>}
       <input aria-label="Поиск сотрудников" placeholder="Найти сотрудника по имени или логину…"
         value={peopleSearch} onChange={e => setPeopleSearch(e.target.value)}/>
       <div className="eva-person-options" onScroll={onPeopleScroll}>
         {availablePeople.map((p, i) => {
           const id = val(p.id);
           return <label key={id || i}><input type="checkbox" checked={followed.includes(id)}
-            disabled={!id} onChange={() => toggleFollow(id)}/>
+            disabled={!id} onChange={() => {const label=val(p.login)||val(p.name);if(label)setTeamNames(prev=>({...prev,[id]:label}));toggleFollow(id);}}/>
             <span>{val(p.name) || val(p.login) || id}<small>{val(p.login)}</small></span>
           </label>;
         })}
@@ -577,7 +599,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     <div className="eva-layout">
       <section className="eva-list">
         <div className="eva-list-heading">
-          <strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong>
+          <strong>{!teamSection ? "Мои задачи" : activePerson ? nameFor(activePerson) : "Команда"}</strong>
           <span>{loading ? "Загрузка…" : `Задач: ${page.items.length}`}</span>
         </div>
         

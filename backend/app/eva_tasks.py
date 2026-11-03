@@ -216,6 +216,14 @@ def attach(user_dep, db_dep):
                                                        "fields": ["id", "code", "name", "parent_id"]}))
         return {"items": rows, "has_more": len(rows) == limit, "offset": offset}
 
+    @router.get("/people/by-id")
+    def person_by_id(id: str, key: str = Depends(token)):
+        rows = entries(invoke(key, "CmfPerson.list", kwargs={
+            "filter": ["id", "==", person_ok(id)], "fields": ["id", "name", "login"], "slice": [0, 1]}))
+        if not rows or rows[0].get("id") != id:
+            raise HTTPException(404, "Сотрудник недоступен")
+        return rows[0]
+
     @router.get("/people")
     def people(
         offset: int = Query(0, ge=0),
