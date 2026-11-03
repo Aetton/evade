@@ -120,6 +120,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     peopleLoadingRef.current = true;
     setPeopleLoading(true);
     setPeopleHasMore(false);
+    setPeople([]);
     void api.evaPeople(0, debouncedPeopleSearch).then(result => {
       if (request !== peopleRequest.current) return;
       setPeople(result.items);
@@ -237,7 +238,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         {people.map((p, i) => <button type="button" key={val(p.id) || i}
             onClick={() => chooseSelf(p)}>{val(p.name) || val(p.login) || val(p.id)} · {val(p.login)}</button>)}
       </div>
-      {peopleLoading && <p className="muted">Ищу сотрудников…</p>}}
+      {peopleLoading && <p className="muted">Ищу сотрудников…</p>}
     </section>}
     <div className="eva-person-tabs">
       <button type="button" className={activePerson === self?.id ? "active" : ""} disabled={!self}
@@ -256,7 +257,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     {self && managePeople && <section className="eva-person-picker">
       <input aria-label="Поиск сотрудников" placeholder="Найти сотрудника по имени или логину…"
         value={peopleSearch} onChange={e => setPeopleSearch(e.target.value)}/>
-      <div className="eva-person-options">
+      <div className="eva-person-options" onScroll={onPeopleScroll}>
         {availablePeople.map((p, i) => {
           const id = val(p.id);
           return <label key={id || i}><input type="checkbox" checked={followed.includes(id)}
