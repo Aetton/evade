@@ -34,6 +34,8 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   const [page, setPage] = useState<Page>({items: [], offset: 0, limit: 50, has_more: false});
   const [projects, setProjects] = useState<Row[]>([]);
   const [people, setPeople] = useState<Row[]>([]);
+  const [peopleHasMore, setPeopleHasMore] = useState(false);
+  const [peopleLoading, setPeopleLoading] = useState(false);
   const [project, setProject] = useState("");
   const [search, setSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
@@ -72,8 +74,13 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.evaSelf(), api.evaProjects(), api.evaPeople()]).then(([identity, p, u]) => {
-      if (active) { setSelf(identity); setActivePerson(identity.id); setProjects(p.items); setPeople(u.items); }
+    void api.evaSelf().then(identity => {
+      if (active) { setSelf(identity); setActivePerson(identity.id); }
+    }).catch(e => { if (active) setError("Не удалось определить пользователя EvaTeam: " + String(e)); });
+    void api.evaProjects().then(p => { if (active) setProjects(p.items); })
+      .catch(e => { if (active) setError(String(e)); });
+    void api.evaPeople().then(p => {
+      if (active) { setPeople(p.items); setPeopleHasMore(p.has_more); }
     }).catch(e => { if (active) setError(String(e)); });
     return () => { active = false; };
   }, [api]);
@@ -84,6 +91,16 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     try { localStorage.setItem("evade:eva-team:" + userId, JSON.stringify(followed)); }
     catch { /* Storage may be disabled. */ }
   }, [userId, followed]);
+  async function loadMorePeople() {
+    if (!peopleHasMore || peopleLoading) return;
+    setPeopleLoading(true);
+    try {
+      const result = await api.evaPeople(people.length);
+      setPeople(current => [...current, ...result.items.filter(p => !current.some(c => val(c.id) === val(p.id)))]);
+      setPeopleHasMore(result.has_more);
+    } catch (e) { setError(String(e)); }
+    finally { setPeopleLoading(false); }
+  }
   function toggleFollow(id: string) {
     if (id === self?.id) return;
     setFollowed(current => current.includes(id) ? current.filter(v => v !== id) : [...current, id]);
@@ -169,6 +186,9 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         })}
         {!availablePeople.length && <p className="muted">Сотрудники не найдены в загруженном справочнике.</p>}
       </div>
+      {peopleHasMore && <button type="button" disabled={peopleLoading} onClick={() => void loadMorePeople()}>
+        {peopleLoading ? "Загружаю…" : "Загрузить ещё сотрудников"}
+      </button>}
       <p className="muted">Закреплённые сотрудники доступны отдельными вкладками. Список сохраняется в этом браузере.</p>
     </section>}
     <div className="eva-controls">
