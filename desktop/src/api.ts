@@ -32,6 +32,22 @@ export class Api {
   inspectPin(pem: string) { return this.request<{hostname: string; sha256: string; expires_at: string}>("/admin/eva/pin/inspect", "POST", {pem}); }
   installPin(pem: string, sha256: string) { return this.request<{installed: boolean; hostname: string; sha256: string}>("/admin/eva/pin", "PUT", {pem, sha256}); }
   removePin() { return this.request<void>("/admin/eva/pin", "DELETE"); }
+  evaReconcilePreview(offset = 0) { return this.request<{
+    items: {local_id:string;title:string;description:string;status:string;priority:number;
+      project:string|null;parent_id:string|null;assignee_id:string|null;
+      digest:string;pending_operations:number;linked:boolean;remote_id:string|null;
+      action:string;candidates:{id:string;code:string;name:string;cached_at:string}[]}[];
+    offset:number;limit:number;has_more:boolean;remote_search_complete:boolean;warning:string
+  }>("/eva/reconcile/preview?offset=" + offset); }
+  evaReconcileInspect(localId: string, remoteCode: string, digest: string) {
+    return this.request<{remote:{id:string;code:string;name:string;text:string;status:string;priority:number};
+      differences:string[];remote_digest:string;warning:string}>("/eva/reconcile/" + encodeURIComponent(localId) + "/inspect",
+        "POST", {remote_code:remoteCode, expected_digest:digest});
+  }
+  evaReconcileLink(localId: string, payload: {
+    remote_code:string;expected_digest:string;expected_remote_digest:string;confirm_differences:boolean
+  }) { return this.request<{linked:boolean;remote_id:string;differences:string[];
+    pending_outbox_preserved:boolean;idempotent:boolean}>("/eva/reconcile/" + encodeURIComponent(localId) + "/link", "POST", payload); }
   evaSyncStatus() { return this.request<{cached:number;legacy_tasks:number;legacy_outbox_pending:number;mode:string}>("/eva/sync/status"); }
   evaSync(responsible: string[]) { return this.request<{synced:number;partial:string[];people:number;mode:string}>("/eva/sync", "POST", {responsible}); }
   evaCachedTasks(responsible: string, offset = 0, limit = 50) {
