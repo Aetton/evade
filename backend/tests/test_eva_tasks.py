@@ -69,6 +69,18 @@ def test_eva_tasks_are_user_scoped_and_mutations_use_documented_methods(monkeypa
         assert calls[-1][1] == "CmfTask.update"
         assert calls[-1][3] == ["CmfTask:abc"]
         assert calls[-1][2] == {"status": "closed"}
+        edited = client.patch("/eva/tasks/DEV-1", headers=auth_a, json={
+            "name": "Updated", "text": "Detailed description",
+            "status": "IN REVIEW", "responsible": "Person:other-2",
+        })
+        assert edited.status_code == 200, edited.text
+        assert calls[-1][1] == "CmfTask.update"
+        assert calls[-1][2] == {"name": "Updated", "text": "Detailed description",
+                                 "status": "IN REVIEW", "responsible": "Person:other-2"}
+        bad_assignee = client.patch("/eva/tasks/DEV-1", headers=auth_a,
+                                    json={"responsible": "Just a Name"})
+        assert bad_assignee.status_code == 422
+
         commented = client.post("/eva/tasks/DEV-1/comments", headers=auth_a,
                                 json={"text": "<script>alert(1)</script>"})
         assert commented.status_code == 201
