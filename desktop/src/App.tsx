@@ -1,3 +1,4 @@
+import EvaTasks from "./EvaTasks";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, Api, Comment, Project, Status, Task, User } from "./api";
 import { isTauri } from "@tauri-apps/api/core";
@@ -282,6 +283,7 @@ function App() {
     <aside className="sidebar">
       <div className="brand"><span className="brand-icon"><Apple size={20}/></span><span>Eva<span className="brand-accent">DE</span></span></div>
       <nav>
+        <button className={view === "eva" ? "nav-active" : ""} onClick={() => setView("eva")}><ListTodo size={17}/> EvaTeam · Задачи</button>
         <button className={view === "mine" ? "nav-active" : ""} onClick={() => setView("mine")}><UserRound size={17}/> Мои задачи</button>
         <button className={view === "all" ? "nav-active" : ""} onClick={() => setView("all")}><ListTodo size={17}/> Все задачи <span className="nav-count">{tasks.length}</span></button>
         <button className={view === "inbox" ? "nav-active" : ""} onClick={() => setView("inbox")}><Inbox size={17}/> Без исполнителя</button>
@@ -293,14 +295,14 @@ function App() {
         <div className="profile"><span className="avatar">{me?.name.slice(0, 1).toUpperCase()}</span><span className="profile-name">{me?.name}</span><button title="Выйти" onClick={() => void logout()}><LogOut size={16}/></button></div>
       </div>
     </aside>
-    <main className="workspace">
+    {view === "eva" && api ? <main className="workspace"><EvaTasks api={api}/></main> : <main className="workspace">
       <header className="topbar"><div><div className="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</div><h1>{view === "mine" ? "Мои задачи" : view === "all" ? "Все задачи" : view === "inbox" ? "Без исполнителя" : projects.find(p => "project:" + p.id === view)?.name || "Задачи"}</h1></div><div className="sync-state"><span className="sync-dot"/> Локальная база · {tasks.length} задач</div></header>
       <div className="toolbar"><div className="search-box"><Search size={17}/><input id="task-search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Найти задачу…"/><kbd>Ctrl K</kbd></div><span className="result-count">{visible.length} найдено</span></div>
       {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError("")}><X size={16}/></button></div>}
       <form className="add-task" onSubmit={createTask}><Plus size={18}/><input id="new-task" placeholder="Новая задача…  Ctrl N" value={draft} onChange={e => setDraft(e.target.value)}/><button disabled={!draft.trim()} type="submit">Создать</button></form>
       <div className="list-head"><span>ЗАДАЧА</span><span>СТАТУС</span><span>ИСПОЛНИТЕЛЬ</span></div>
       <section className="task-list">{roots.length ? roots.map(t => <div key={t.id}>{taskRow(t)}{visible.filter(c => c.parent_id === t.id).map(c => taskRow(c, 1))}</div>) : <div className="empty"><ListTodo size={38}/><h3>Здесь пока тихо</h3><p>Создай первую задачу или выбери другой раздел.</p></div>}</section>
-    </main>
+    </main>}
     {showSettings && <div className="settings-backdrop" onClick={() => setShowSettings(false)}><section className="settings-panel card" onClick={e => e.stopPropagation()}>
       <div className="section-title"><h2>Настройки EvaDE</h2><button onClick={() => setShowSettings(false)} aria-label="Закрыть"><X size={18}/></button></div>
       <div className="detail-section"><p className="muted">Учётная запись: {me?.name} · Роль: {me?.is_admin ? "Администратор" : "Пользователь"}</p></div>
