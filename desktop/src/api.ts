@@ -48,7 +48,7 @@ export class Api {
   evaProjects(offset = 0) { return this.request<{items: Record<string, unknown>[]; has_more: boolean; offset: number}>("/eva/projects?offset=" + offset); }
   evaPeople(offset = 0, name = "") { const q = new URLSearchParams({offset: String(offset)}); if (name.trim().length >= 2) q.set("name", name.trim()); return this.request<{items: Record<string, unknown>[]; has_more: boolean}>("/eva/people?" + q); }
   evaTask(code: string) { return this.request<Record<string, unknown>>("/eva/tasks/" + encodeURIComponent(code)); }
-  createEvaTask(task: {name: string; text: string; project?: string; parent_task?: string; responsible?: string}) { return this.request<unknown>("/eva/tasks", "POST", task); }
+  createEvaTask(task: {name: string; text: string; project?: string; parent_task?: string; responsible?: string; executors?: string[]}) { return this.request<unknown>("/eva/tasks", "POST", task); }
   updateEvaTask(code: string, changes: Record<string, unknown>) { return this.request<unknown>("/eva/tasks/" + encodeURIComponent(code), "PATCH", changes); }
   commentEvaTask(code: string, text: string) { return this.request<unknown>("/eva/tasks/" + encodeURIComponent(code) + "/comments", "POST", {text}); }
   caStatus() { return this.request<{installed: boolean; certificates: number | null; warning?: string}>("/admin/eva/ca"); }

@@ -1,4 +1,5 @@
 import { TaskDescription } from "./TaskDescription";
+import { ExecutorPicker, executorList, type Executor } from "./ExecutorPicker";
 import { bindInspector } from "./inspectorWidth";
 import { createPortal } from "react-dom";
 import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -97,6 +98,9 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
   const [editText, setEditText] = useState("");
   const [editStatus, setEditStatus] = useState("");
   const [editPriority, setEditPriority] = useState(0);
+  const [editExecutors,setEditExecutors] = useState<Executor[]>([]);
+  const [newExecutors,setNewExecutors] = useState<Executor[]>([]);
+  const [childExecutors,setChildExecutors] = useState<Executor[]>([]);
   const [editResponsible, setEditResponsible] = useState("");
   const [responsibleName, setResponsibleName] = useState("");
   const [responsibleSearch, setResponsibleSearch] = useState("");
@@ -194,6 +198,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     try {
       const t = await api.evaTask(code);
       setTask(t);
+      setEditExecutors(executorList(t.executors));
       setEditName(val(t.name)); setEditText(val(t.text)); setEditStatus(status(t));
       setEditPriority(priority(t));
       const person = t.responsible && typeof t.responsible === "object" ? t.responsible as Row : null;
@@ -346,6 +351,9 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     const original = task.responsible && typeof task.responsible === "object"
       ? val((task.responsible as Row).id) : val(task.responsible_id);
     if (editResponsible && editResponsible !== original) changes.responsible = editResponsible;
+    const before = executorList(task.executors).map(p=>p.id).sort();
+    const after = editExecutors.map(p=>p.id).sort();
+    if (JSON.stringify(before)!==JSON.stringify(after)) changes.executors=after;
     return changes;
   }
   const dirty = Object.keys(pendingChanges()).length > 0;
@@ -388,8 +396,8 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     if (!p || !newName.trim()) return;
     setSaving(true); setError(""); setMessage("");
     try {
-      await api.createEvaTask({name: newName.trim(), text: newText, project: projectCode(p), responsible: activePerson || undefined});
-      setNewName(""); setNewText(""); setNewTask(false); setMessage("Задача создана в EvaTeam.");
+      await api.createEvaTask({name: newName.trim(), text: newText, project: projectCode(p), executors: newExecutors.filter(p=>p.id!==activePerson).map(p=>p.id), responsible: activePerson || undefined});
+      setNewExecutors([]);setNewName(""); setNewText(""); setNewTask(false); setMessage("Задача создана в EvaTeam.");
       await loadList(0);
     } catch (err) { setError(String(err)); }
     finally { setSaving(false); }
@@ -450,7 +458,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     const label = "Добавить подзадачу";
     return <button type="button" title={label} aria-label={label+" к "+taskCode(parent)}
       disabled={offlineCache || saving || !activePerson} onClick={()=>{
-        setChildName(""); setChildText(""); setChildError(""); setChildParent(parent);
+        setChildExecutors([]);setChildName(""); setChildText(""); setChildError(""); setChildParent(parent);
       }}><Plus size={15}/>{full && label}</button>;
   }
   async function createChild(e: FormEvent) {
@@ -458,7 +466,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     if (!childParent || !childName.trim() || saving || offlineCache || !activePerson) return;
     setSaving(true); setChildError("");
     try {
-      await api.createEvaTask({name:childName.trim(), text:childText, parent_task:taskCode(childParent), responsible:activePerson});
+      await api.createEvaTask({name:childName.trim(), text:childText, parent_task:taskCode(childParent), responsible:activePerson, executors:childExecutors.map(p=>p.id)});
       setChildParent(null);
       setMessage("Подзадача создана в EvaTeam.");
       await loadList(0);
@@ -559,6 +567,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
         <p>Ответственный — {activePerson===self?.id ? self.name : nameFor(activePerson)}</p>
         <label>Название<input autoFocus required maxLength={300} value={childName} onChange={e=>setChildName(e.target.value)}/></label>
         <label>Описание<textarea rows={4} value={childText} onChange={e=>setChildText(e.target.value)}/></label>
+        <ExecutorPicker api={api} primary={activePerson} people={childExecutors} onChange={setChildExecutors}/>
         {childError && <p role="alert">{childError}</p>}
         <div><button type="button" disabled={saving} onClick={()=>setChildParent(null)}>Отмена</button>
         <button disabled={saving || !childName.trim()}>Создать подзадачу</button></div>
@@ -628,6 +637,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
     {newTask && <form className="eva-create" onSubmit={create}>
       <div className="eva-form-title"><h3>Создать задачу</h3><button type="button" onClick={() => setNewTask(false)}><X size={16}/></button></div>
       <p className="muted">{(createProject || project) ? "Проект: "+val(projects.find(p => projectId(p)===(createProject || project) || projectCode(p)===(createProject || project))?.name) : "Выбери проект в нижней панели."}</p>
+      <ExecutorPicker api={api} primary={activePerson} people={newExecutors} onChange={setNewExecutors}/>
       <input required placeholder="Название задачи" value={newName} onChange={e => setNewName(e.target.value)}/>
       <textarea placeholder="Описание (текст)" rows={3} value={newText} onChange={e => setNewText(e.target.value)}/>
       <button type="submit" disabled={saving || offlineCache || !(createProject || project) || !newName.trim()}>Создать в EvaTeam</button>
@@ -687,12 +697,14 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
                   onClick={() => {
                     const id = val(person.id);
                     if (!id) return;
+                    setEditExecutors(current=>current.filter(p=>p.id!==id));
                     setEditResponsible(id);
                     setResponsibleName(val(person.name) || val(person.login) || id);
                     setResponsibleMatches([]); setResponsibleSearch("");
                   }}>{val(person.name) || val(person.login)} <small>{val(person.login)}</small></button>)}
               </div>}
             </div>
+            <ExecutorPicker api={api} primary={editResponsible} people={editExecutors} onChange={setEditExecutors}/>
             <label>Проект<span>{val(task.project) || val(projects.find(p=>projectId(p)===val(task.project_id))?.name) || val(task.project_id) || "—"}</span></label><TaskDescription key={selected} value={editText} onChange={setEditText}/>
           </form>
           <section className="lab-children"><h3>Подзадачи <small>{directChildren.length} в выборке</small></h3>{directChildren.map(row=><button key={taskCode(row)} onClick={()=>openTask(taskCode(row))}><i className="lab-status-dot" data-status={status(row)}/>{val(row.name)}<small>{taskCode(row)}</small></button>)}{addChildButton({...task, code:selected}, true)}</section>
@@ -701,6 +713,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
             <form onSubmit={sendComment}><textarea rows={3} placeholder="Новый комментарий…" value={comment} onChange={e => setComment(e.target.value)}/><button disabled={saving || offlineCache || !comment.trim()}>Отправить</button></form>
           </div>
           <footer className="lab-edit-actions"><small>{dirty?"Есть несохранённые правки":"Все правки сохранены"}</small><button type="button" disabled={saving || !dirty} onClick={()=>{
+              setEditExecutors(executorList(task.executors));
               setEditName(val(task.name)); setEditText(val(task.text)); setEditStatus(status(task)); setEditPriority(priority(task));
               const person = task.responsible && typeof task.responsible === "object" ? task.responsible as Row : null;
               setEditResponsible(val(person?.id) || val(task.responsible_id));

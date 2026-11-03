@@ -255,7 +255,7 @@ def attach(user_dep, db_dep):
 
     @router.get("/tasks/{code}")
     def task_detail(code: str, key: str = Depends(token)):
-        data = plain(invoke(key, "CmfTask.get", kwargs={"filter": ["code", "==", code_ok(code)], "fields": ["*", "comments.*"]}))
+        data = plain(invoke(key, "CmfTask.get", kwargs={"filter": ["code", "==", code_ok(code)], "fields": ["*", "comments.*", "executors.*"]}))
         return data
 
     class CreateTask(BaseModel):
@@ -265,6 +265,7 @@ def attach(user_dep, db_dep):
         parent_task: str | None = Field(default=None, min_length=1, max_length=100)
         priority: int | None = Field(default=None, ge=0, le=5)
         responsible: str | None = Field(default=None, max_length=200)
+        executors: list[str] | None = Field(default=None, max_length=100)
 
     @router.post("/tasks", status_code=201)
     def create_task(payload: CreateTask, key: str = Depends(token)):
@@ -284,6 +285,8 @@ def attach(user_dep, db_dep):
             kwargs["priority"] = payload.priority
         if payload.responsible:
             kwargs["responsible"] = person_ok(payload.responsible)
+        if payload.executors:
+            kwargs["executors"] = list(dict.fromkeys(person_ok(pid) for pid in payload.executors if pid != payload.responsible))
         return {"result": invoke(key, "CmfTask.create", kwargs=kwargs)}
 
     class PatchTask(BaseModel):
@@ -292,10 +295,13 @@ def attach(user_dep, db_dep):
         status: str | None = Field(default=None, min_length=1, max_length=100)
         priority: int | None = Field(default=None, ge=0, le=5)
         responsible: str | None = Field(default=None, max_length=200)
+        executors: list[str] | None = Field(default=None, max_length=100)
 
     @router.patch("/tasks/{code}")
     def update_task(code: str, payload: PatchTask, key: str = Depends(token)):
         changes = payload.model_dump(exclude_unset=True)
+        if "executors" in changes:
+            changes["executors"] = list(dict.fromkeys(person_ok(pid) for pid in (payload.executors or []) if pid != payload.responsible))
         if not changes:
             raise HTTPException(422, "Нет изменений")
         if "responsible" in changes and changes["responsible"] is not None:
