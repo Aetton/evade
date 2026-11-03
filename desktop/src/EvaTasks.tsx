@@ -181,6 +181,19 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       <div><small>ПЕРСОНАЛЬНОЕ ПОДКЛЮЧЕНИЕ · EVATEAM</small><h1>{activePerson === self?.id ? "Мои задачи" : "Задачи · " + nameFor(activePerson)}</h1></div>
       <button className="secondary-action" onClick={() => void loadList(page.offset)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
     </header>
+    {!self && <section className="eva-person-picker">
+      <h3>Выбери себя в EvaTeam</h3>
+      <p className="muted">Ваша EvaTeam не отдаёт владельца API-токена. Найди свою учётную запись в справочнике. Выбор запомнится в этом браузере.</p>
+      <input aria-label="Найти себя в EvaTeam" placeholder="Имя или логин…" value={peopleSearch}
+        onChange={e => setPeopleSearch(e.target.value)} />
+      <div className="eva-person-options">
+        {people.filter(p => (val(p.name) + " " + val(p.login)).toLowerCase().includes(peopleSearch.toLowerCase()))
+          .map((p, i) => <button type="button" key={val(p.id) || i}
+            onClick={() => chooseSelf(p)}>{val(p.name) || val(p.login) || val(p.id)} · {val(p.login)}</button>)}
+      </div>
+      {peopleHasMore && <button type="button" disabled={peopleLoading}
+        onClick={() => void loadMorePeople()}>{peopleLoading ? "Загружаю…" : "Загрузить ещё сотрудников"}</button>}
+    </section>}
     <div className="eva-person-tabs">
       <button type="button" className={activePerson === self?.id ? "active" : ""} disabled={!self}
         onClick={() => setActivePerson(self?.id || "")}><UserRound size={15}/> Мои задачи</button>
@@ -190,6 +203,11 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         <Star size={15}/> {managePeople ? "Закрыть выбор" : "Сотрудники"}
       </button>
     </div>
+    {self && <button type="button" className="secondary-action" onClick={() => {
+      setSelf(null); setActivePerson(""); setPage({items: [], offset: 0, limit: 50, has_more: false});
+      setManagePeople(false);
+      try { localStorage.removeItem("evade:eva-self:" + userId); } catch { /* ignore */ }
+    }}>Сменить мою учётку EvaTeam</button>}
     {managePeople && <section className="eva-person-picker">
       <input aria-label="Поиск сотрудников" placeholder="Найти сотрудника по имени или логину…"
         value={peopleSearch} onChange={e => setPeopleSearch(e.target.value)}/>
