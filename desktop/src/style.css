@@ -256,3 +256,28 @@
 .eva-child-dialog form>div{display:flex;justify-content:flex-end;gap:8px}
 .eva-child-dialog h3,.eva-child-dialog p{margin:4px 0}
 .eva-task-node>.eva-task-row{flex:1;min-width:0}
+
+/* Keep primary labels readable and align row actions at every tree depth. */
+.lab-shell .eva-project-group > div:first-child { min-width: 0; gap: 4px; }
+.lab-shell .eva-project-heading { flex: 1 1 0; min-width: 0; }
+.lab-shell .eva-project-heading .eva-project-title { line-height: 1.4; }
+.lab-shell .eva-task-node { gap: 5px; padding-right: 4px; }
+.lab-shell .eva-task-open { min-width: 0; align-items: center; }
+.lab-shell .eva-task-node > button[title="Добавить подзадачу"],
+.lab-shell .eva-project-heading + button {
+  width: 30px; height: 30px; padding: 0; flex: 0 0 30px;
+  display: inline-grid; place-items: center;
+}
+.lab-shell .eva-controls form { align-items: stretch; }
+.lab-shell .eva-controls form input { min-width: 0; }
+.lab-options { align-items: center; }
+.lab-options label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.lab-options select { overflow: hidden; text-overflow: ellipsis; }
+.lab-edit-actions { flex-wrap: wrap; align-items: center; gap: 8px; }
+.lab-edit-actions button { margin-left: 0; }
+.lab-edit-actions small { margin-right: auto; }
+.lab-shell .description-preview pre { white-space: pre; overflow-x: auto; }
+@media (max-width: 680px) {
+  .lab-options { gap: 6px 12px; padding: 8px 12px; }
+  .lab-shell .eva-head .eva-group-switch { justify-self: start; max-width: 100%; }
+}
