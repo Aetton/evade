@@ -110,3 +110,35 @@ def test_current_user_rpc_unavailable_allows_manual_selection(monkeypatch):
         assert directory.json()["items"][0]["id"] == "Person:one"
         tasks = client.get("/eva/tasks?responsible=Person:one", headers=headers)
         assert tasks.status_code == 200
+
+
+def test_person_name_search_filters_upstream_before_pagination(monkeypatch):
+    monkeypatch.setenv("EVADE_CREDENTIAL_KEY", Fernet.generate_key().decode())
+    calls = []
+
+    def fake_call(key, method, *, kwargs=None, args=None):
+        calls.append((method, kwargs))
+        if method == "CmfPerson.list":
+            return [{"id": "Person:someone", "name": "Иван Иванов", "login": "ivan"}]
+        return []
+
+    monkeypatch.setattr(eva_tasks, "eva_call", fake_call)
+    with TestClient(app) as client:
+        with SessionLocal() as db:
+            user = User(name="Search Tester", token_hash=hashlib.sha256(b"eva-people-search").hexdigest())
+            db.add(user)
+            db.flush()
+            store(db, user.id, "search-token")
+            db.commit()
+        headers = {"Authorization": "Bearer eva-people-search"}
+        response = client.get("/eva/people?name=Иван&offset=10&limit=20", headers=headers)
+        assert response.status_code == 200, response.text
+        assert calls[-1][0] == "CmfPerson.list"
+        assert calls[-1][1]["filter"] == ["name", "LIKE", "%Иван%"]
+        assert calls[-1][1]["slice"] == [10, 30]
+        response = client.get("/eva/people?offset=0", headers=headers)
+        assert response.status_code == 200
+        assert "filter" not in calls[-1][1]
+        for invalid in ("%", "_", "a"):
+            response = client.get("/eva/people", headers=headers, params={"name": invalid})
+            assert response.status_code == 422
