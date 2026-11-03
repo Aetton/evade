@@ -400,14 +400,15 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   }
   function projectSection(node: ProjectTreeNode, level = 0) {
     const key = "project:" + node.id;
+    const collapsed = collapsedStatuses[key] ?? (node.count === 0);
     return <section className="eva-project-group" key={key}>
       <button type="button" className="eva-project-heading" style={{paddingLeft: 16 + level * 13}}
-        aria-expanded={!collapsedStatuses[key]} title={node.path} onClick={() => toggleStatus(key)}>
-        <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
+        aria-expanded={!collapsed} title={node.path} onClick={() => toggleStatus(key)}>
+        <span className="eva-status-arrow">{collapsed ? "▸" : "▾"}</span>
         <span className="eva-project-title">{node.name}</span>
         <span className="eva-status-count">{node.count}</span>
       </button>
-      {!collapsedStatuses[key] && <>
+      {!collapsed && <>
         {node.sections.map(section => listSection(section, node.id))}
         {node.children.map(child => projectSection(child, level + 1))}
       </>}
