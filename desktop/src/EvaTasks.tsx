@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Use
 
 type Row = Record<string, unknown>;
 type Page = { items: Row[]; offset: number; limit: number; has_more: boolean };
+const STATUS_CODES = ["TO DO", "IN PROGRESS", "PAUSE", "IN REVIEW", "DONE", "CANCEL"] as const;
 const val = (x: unknown): string => {
   if (x == null) return "";
   if (typeof x === "object") {
@@ -356,7 +357,7 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     {message && <p className="eva-message">{message}</p>}
     {newTask && <form className="eva-create" onSubmit={create}>
       <div className="eva-form-title"><h3>Создать задачу</h3><button type="button" onClick={() => setNewTask(false)}><X size={16}/></button></div>
-      <p className="muted">Выбери проект в фильтре выше. Создание идёт непосредственно в EvaTeam.</p>
+      <p className="muted">Выбери проект в фильтре выше. Новая задача сразу появится в общем трекере.</p>
       <input required placeholder="Название задачи" value={newName} onChange={e => setNewName(e.target.value)}/>
       <textarea placeholder="Описание (текст)" rows={3} value={newText} onChange={e => setNewText(e.target.value)}/>
       <button type="submit" disabled={saving || offlineCache || !project || !newName.trim()}>Создать в EvaTeam</button>
@@ -392,12 +393,21 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
             <label>Название<input value={editName} onChange={e => setEditName(e.target.value)}/></label>
             <label>Описание<textarea rows={5} value={editText} onChange={e => setEditText(e.target.value)}/></label>
             <div className="eva-edit-grid">
-              <label>Код статуса EvaTeam<input value={editStatus} placeholder="Статус проекта" onChange={e => setEditStatus(e.target.value)}/></label>
-              <label>Приоритет (0–5)<input type="number" min={0} max={5} value={editPriority} onChange={e => setEditPriority(Number(e.target.value))}/></label>
+              <label>Статус
+                <select value={editStatus} onChange={e => setEditStatus(e.target.value)}>
+                  {editStatus && !STATUS_CODES.includes(editStatus as typeof STATUS_CODES[number]) && <option value={editStatus}>{editStatus}</option>}
+                  {STATUS_CODES.map(code => <option key={code} value={code}>{code}</option>)}
+                </select>
+              </label>
+              <label>Приоритет
+                <select value={editPriority} onChange={e => setEditPriority(Number(e.target.value))}>
+                  {[0,1,2,3,4,5].map(value => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
             </div>
             <label>Исполнитель (логин / email)<input value={editResponsible} list="eva-people" onChange={e => setEditResponsible(e.target.value)}/></label>
             <datalist id="eva-people">{people.map((p,i) => <option key={i} value={val(p.login) || val(p.email)}>{val(p.name)}</option>)}</datalist>
-            <button className="eva-primary" disabled={saving || offlineCache || !editName.trim()}><Save size={16}/> Сохранить в EvaTeam</button>
+            <button className="eva-primary" disabled={saving || offlineCache || !editName.trim()}><Save size={16}/> Сохранить изменения</button>
           </form>
           <div className="eva-comments"><h3><MessageSquare size={15}/> Комментарии ({comments.length})</h3>
             {comments.map((c,i) => <div className="eva-comment" key={i}><small>{val(c.cmf_author) || val(c.author) || "Автор"}</small><p>{richText(c.text)}</p></div>)}
