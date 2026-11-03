@@ -273,6 +273,9 @@ def attach(user_dep, db_dep):
         changes = payload.model_dump(exclude_unset=True)
         if not changes:
             raise HTTPException(422, "Нет изменений")
+        if "responsible" in changes and changes["responsible"] is not None:
+            if not PERSON_ID.fullmatch(changes["responsible"]):
+                raise HTTPException(422, "Ответственного нужно выбрать из справочника сотрудников EvaTeam")
         # EvaTeam update expects a CmfTask:<uuid> identifier, not a task code.
         item = plain(invoke(key, "CmfTask.get", kwargs={"filter": ["code", "==", code_ok(code)], "fields": ["*"]}))
         object_id = item.get("id") or item.get("cmf_id")
