@@ -261,17 +261,29 @@ def attach(user_dep, db_dep):
     class CreateTask(BaseModel):
         name: str = Field(min_length=1, max_length=300)
         text: str = Field(default="", max_length=50000)
-        project: str = Field(min_length=1, max_length=100)
+        project: str | None = Field(default=None, min_length=1, max_length=100)
+        parent_task: str | None = Field(default=None, min_length=1, max_length=100)
         priority: int | None = Field(default=None, ge=0, le=5)
         responsible: str | None = Field(default=None, max_length=200)
 
     @router.post("/tasks", status_code=201)
     def create_task(payload: CreateTask, key: str = Depends(token)):
-        kwargs = {"name": payload.name, "parent": code_ok(payload.project), "text": payload.text}
+        if bool(payload.project) == bool(payload.parent_task):
+            raise HTTPException(422, "Укажи проект или родительскую задачу")
+        if payload.parent_task:
+            parent_row = plain(invoke(key, "CmfTask.get", kwargs={
+                "filter": ["code", "==", code_ok(payload.parent_task)], "fields": ["id", "code"]}))
+            object_id = parent_row.get("id") or parent_row.get("cmf_id")
+            if not object_id:
+                raise HTTPException(502, "EvaTeam не вернула ID родительской задачи")
+            parent = "CmfTask:" + str(object_id).removeprefix("CmfTask:")
+        else:
+            parent = code_ok(payload.project)
+        kwargs = {"name": payload.name, "parent": parent, "text": payload.text}
         if payload.priority is not None:
             kwargs["priority"] = payload.priority
         if payload.responsible:
-            kwargs["responsible"] = payload.responsible
+            kwargs["responsible"] = person_ok(payload.responsible)
         return {"result": invoke(key, "CmfTask.create", kwargs=kwargs)}
 
     class PatchTask(BaseModel):

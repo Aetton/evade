@@ -102,6 +102,15 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
   const [responsibleSearch, setResponsibleSearch] = useState("");
   const [responsibleMatches, setResponsibleMatches] = useState<Row[]>([]);
   const [responsibleSearching, setResponsibleSearching] = useState(false);
+  const childDialog = useRef<HTMLDialogElement>(null);
+  const [childParent, setChildParent] = useState<Row|null>(null);
+  const [childName, setChildName] = useState("");
+  const [childText, setChildText] = useState("");
+  const [childError, setChildError] = useState("");
+  useEffect(() => {
+    if (childParent) childDialog.current?.showModal();
+    else childDialog.current?.close();
+  }, [childParent]);
   const [newTask, setNewTask] = useState(false);
   const [newName, setNewName] = useState("");
   const [newText, setNewText] = useState("");
@@ -436,8 +445,27 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
   const statusSummary = summaryLabels.map(label => ({
     key: label, label, count: groups.filter(group => group.label === label).reduce((sum, group) => sum + group.rows.length, 0)
   }));
+  function addChildButton(parent: Row, full = false) {
+    const label = "Добавить подзадачу";
+    return <button type="button" title={label} aria-label={label+" к "+taskCode(parent)}
+      disabled={offlineCache || saving || !activePerson} onClick={()=>{
+        setChildName(""); setChildText(""); setChildError(""); setChildParent(parent);
+      }}><Plus size={15}/>{full && label}</button>;
+  }
+  async function createChild(e: FormEvent) {
+    e.preventDefault();
+    if (!childParent || !childName.trim() || saving || offlineCache || !activePerson) return;
+    setSaving(true); setChildError("");
+    try {
+      await api.createEvaTask({name:childName.trim(), text:childText, parent_task:taskCode(childParent), responsible:activePerson});
+      setChildParent(null);
+      setMessage("Подзадача создана в EvaTeam.");
+      await loadList(0);
+    } catch(err) { setChildError(String(err)); }
+    finally { setSaving(false); }
+  }
   function taskEntry(t: Row, index: number) {
-    return <button key={taskCode(t) || index}
+    return <div className="eva-task-node" key={taskCode(t) || index}><button
       className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
       onClick={() => openTask(taskCode(t))}>
       <span className="eva-code">{taskCode(t)}</span>
@@ -446,7 +474,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
         <span>Приоритет: {val(t.priority) || "0"}</span>
         {Boolean(t.cmf_modified_at) && <span><Clock size={12}/> {new Date(String(t.cmf_modified_at)).toLocaleDateString("ru-RU")}</span>}
       </span>
-    </button>;
+    </button>{addChildButton(t)}</div>;
   }
   function statusSection(group: ReturnType<typeof groupEvaTasks>[number], prefix: string) {
     const key = "status:" + prefix + ":" + group.key;
@@ -478,6 +506,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
           <strong>{val(node.task.name) || "(без названия)"}</strong>
           
         </button>
+        {addChildButton(node.task)}
         {node.children.length > 0 && <span className="eva-status-count">{node.count - 1}</span>}
       </div>
       {!collapsed && node.children.map(child => taskBranch(child, depth + 1))}
@@ -522,6 +551,16 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div ref={shellRef} data-open={!!selected} className="eva-workspace lab-shell" data-compact={compact}><div className="lab-center" data-inspector-center>
     {navHost && createPortal(<><button className={!teamActive?"nav-active":""} onClick={()=>{if(activePerson!==self?.id && !canLeave())return;setTeamSection(false);setManagePeople(false);setActivePerson(self?.id || "");}}><UserRound size={16}/> Мои задачи</button><button className={teamActive?"nav-active":""} onClick={()=>{if(!teamSection && !canLeave())return;setTeamSection(true);setManagePeople(true);if(!teamSection)setActivePerson(followed[0] || "");}}><Users size={16}/> Команда</button></>,navHost)}
+    <dialog ref={childDialog} className="eva-child-dialog" aria-labelledby="child-heading" onCancel={e=>{if(saving)e.preventDefault();else setChildParent(null);}}>
+      <form onSubmit={createChild}><h3 id="child-heading">Новая подзадача</h3>
+        <p>Родитель — {childParent && taskCode(childParent)} · {val(childParent?.name)}</p>
+        <p>Ответственный — {activePerson===self?.id ? self.name : nameFor(activePerson)}</p>
+        <label>Название<input autoFocus required maxLength={300} value={childName} onChange={e=>setChildName(e.target.value)}/></label>
+        <label>Описание<textarea rows={4} value={childText} onChange={e=>setChildText(e.target.value)}/></label>
+        {childError && <p role="alert">{childError}</p>}
+        <div><button type="button" disabled={saving} onClick={()=>setChildParent(null)}>Отмена</button>
+        <button disabled={saving || !childName.trim()}>Создать подзадачу</button></div>
+      </form></dialog>
     <header className="eva-head">
       <div><small>EVADE / РАБОЧЕЕ ПРОСТРАНСТВО</small><h1>{teamSection ? (activePerson ? "Команда / "+nameFor(activePerson) : "Моя команда") : "Мои задачи"}</h1>
         <div className="eva-sync-caption">{offlineCache ? <><CloudOff size={13}/> Сохранённая копия · только просмотр</> :
@@ -603,7 +642,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
           <span>{loading ? "Загрузка…" : `Задач: ${page.items.length}`}</span>
         </div>
         
-        {board ? <div className="lab-board">{groupedTasks.map(g=><section key={g.key}><h3>{g.label} · {g.rows.length}</h3>{g.rows.map(row=><button key={taskCode(row)} onClick={()=>openTask(taskCode(row))} aria-pressed={selected===taskCode(row)}><small>{taskCode(row)}</small><strong>{val(row.name)}</strong></button>)}</section>)}</div> : groupBy === "project"
+        {board ? <div className="lab-board">{groupedTasks.map(g=><section key={g.key}><h3>{g.label} · {g.rows.length}</h3>{g.rows.map(row=><div key={taskCode(row)}><button onClick={()=>openTask(taskCode(row))} aria-pressed={selected===taskCode(row)}><small>{taskCode(row)}</small><strong>{val(row.name)}</strong></button>{addChildButton(row)}</div>)}</section>)}</div> : groupBy === "project"
           ? filteredProjectTree.map(node => projectSection(node))
           : groupedTasks.map(group => statusSection(group, "root"))}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
@@ -654,7 +693,7 @@ export default function EvaTasks({ api, userId, personId, personName }: { api: A
             </div>
             <label>Проект<span>{val(task.project) || val(projects.find(p=>projectId(p)===val(task.project_id))?.name) || val(task.project_id) || "—"}</span></label><TaskDescription key={selected} value={editText} onChange={setEditText}/>
           </form>
-          <section className="lab-children"><h3>Подзадачи <small>{directChildren.length} в выборке</small></h3>{directChildren.map(row=><button key={taskCode(row)} onClick={()=>openTask(taskCode(row))}><i className="lab-status-dot" data-status={status(row)}/>{val(row.name)}<small>{taskCode(row)}</small></button>)}</section>
+          <section className="lab-children"><h3>Подзадачи <small>{directChildren.length} в выборке</small></h3>{directChildren.map(row=><button key={taskCode(row)} onClick={()=>openTask(taskCode(row))}><i className="lab-status-dot" data-status={status(row)}/>{val(row.name)}<small>{taskCode(row)}</small></button>)}{addChildButton({...task, code:selected}, true)}</section>
           <div className="eva-comments"><h3><MessageSquare size={15}/> Комментарии ({comments.length})</h3>
             {comments.map((c,i) => <div className="eva-comment" key={i}><small>{val(c.cmf_author) || val(c.author) || "Автор"}</small><p>{richText(c.text)}</p></div>)}
             <form onSubmit={sendComment}><textarea rows={3} placeholder="Новый комментарий…" value={comment} onChange={e => setComment(e.target.value)}/><button disabled={saving || offlineCache || !comment.trim()}>Отправить</button></form>

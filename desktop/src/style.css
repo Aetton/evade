@@ -249,3 +249,10 @@
 .description-preview pre{max-width:100%;overflow-x:auto;padding:12px;background:var(--lab-bg);border-radius:8px;white-space:pre;overflow-wrap:normal}
 .description-preview .description-plain{white-space:pre-wrap}
 .description-preview a{color:var(--lab-accent)}
+
+.eva-child-dialog{background:var(--lab-pane);color:var(--lab-text);border:1px solid var(--lab-line);border-radius:12px;width:min(420px,95vw)}
+.eva-child-dialog::backdrop{background:#0008}
+.eva-child-dialog form,.eva-child-dialog label{display:grid;gap:8px}
+.eva-child-dialog form>div{display:flex;justify-content:flex-end;gap:8px}
+.eva-child-dialog h3,.eva-child-dialog p{margin:4px 0}
+.eva-task-node>.eva-task-row{flex:1;min-width:0}
