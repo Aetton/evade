@@ -14,6 +14,7 @@ from .eva_client import EvaError, call as eva_call
 
 router = APIRouter(prefix="/eva", tags=["EvaTeam tasks"])
 PERSON_ID = re.compile(r"^(?:Person|CmfPerson):[a-zA-Z0-9_-]{1,100}$")
+PROJECT_ID = re.compile(r"^(?:(?:CmfProject|Project):)?[a-zA-Z0-9_.-]{1,100}$")
 TASK_CODE = re.compile(r"^[\w.-]{1,100}$", re.UNICODE)
 
 
@@ -97,7 +98,9 @@ def attach(user_dep, db_dep):
     ):
         filters = [["responsible", "==", person_ok(responsible)]]
         if project:
-            filters.append(["project_id", "==", code_ok(project)])
+            if not PROJECT_ID.fullmatch(project):
+                raise HTTPException(422, "Некорректный ID проекта EvaTeam")
+            filters.append(["project_id", "==", project])
         kwargs = {"slice": [offset, offset + limit],
                   "fields": ["id", "code", "name", "responsible", "status", "priority", "cmf_created_at"],
                   "order_by": ["-cmf_created_at"], "filter": filters[0] if len(filters) == 1 else filters}
@@ -122,7 +125,8 @@ def attach(user_dep, db_dep):
         limit: int = Query(100, ge=1, le=100),
         key: str = Depends(token),
     ):
-        return {"items": entries(invoke(key, "CmfPerson.list", kwargs={"slice": [offset, offset + limit], "fields": ["*"]}))}
+        items = entries(invoke(key, "CmfPerson.list", kwargs={"slice": [offset, offset + limit], "fields": ["id", "name", "login", "email"]}))
+        return {"items": items, "has_more": len(items) == limit}
 
     @router.get("/tasks/{code}")
     def task_detail(code: str, key: str = Depends(token)):
