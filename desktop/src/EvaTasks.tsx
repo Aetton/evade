@@ -1,7 +1,8 @@
 import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Api } from "./api";
 import { groupEvaTasks } from "./evaStatus";
-import { ChevronLeft, ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star, Cloud, CloudOff, AlertTriangle, Clock } from "lucide-react";
+import { buildProjectTree, ProjectTreeNode, SectionGroup } from "./evaProjects";
+import { ChevronRight, RefreshCw, Plus, MessageSquare, Save, X, Users, UserRound, Star, Cloud, CloudOff, Clock } from "lucide-react";
 
 type Row = Record<string, unknown>;
 type Page = { items: Row[]; offset: number; limit: number; has_more: boolean };
@@ -55,6 +56,10 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   const peopleOffset = useRef(0);
   const peopleLoadingRef = useRef(false);
   const [project, setProject] = useState("");
+  const [groupBy, setGroupBy] = useState<"project"|"status">(() => {
+    try { return localStorage.getItem("evade:task-group:" + userId) === "status" ? "status" : "project"; }
+    catch { return "project"; }
+  });
   const [search, setSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
   const [selected, setSelected] = useState("");
@@ -64,6 +69,10 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   const [editStatus, setEditStatus] = useState("");
   const [editPriority, setEditPriority] = useState(0);
   const [editResponsible, setEditResponsible] = useState("");
+  const [responsibleName, setResponsibleName] = useState("");
+  const [responsibleSearch, setResponsibleSearch] = useState("");
+  const [responsibleMatches, setResponsibleMatches] = useState<Row[]>([]);
+  const [responsibleSearching, setResponsibleSearching] = useState(false);
   const [newTask, setNewTask] = useState(false);
   const [newName, setNewName] = useState("");
   const [newText, setNewText] = useState("");
@@ -78,14 +87,23 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     try {
       if (activePerson) {
         const remote = await api.evaTasks(activePerson, offset, 50, project, search);
-        setPage(remote); setOfflineCache(false);
+        setPage(prev => {
+          if (offset === 0) return {...remote, offset: 0};
+          const existing = new Set(prev.items.map(item => val(item.id) || taskCode(item)));
+          const added = remote.items.filter(item => !existing.has(val(item.id) || taskCode(item)));
+          return {...remote, offset: 0, items: [...prev.items, ...added]};
+        });
+        setOfflineCache(false);
         setLastSync(new Date());
       }
     } catch (e) {
       try {
         const cached = await api.evaCachedTasks(activePerson, offset, 50);
         // Offline cache isn't filtered by project/search: never pretend it is.
-        setPage(cached); setOfflineCache(true);
+        setPage(prev => offset === 0 ? {...cached, offset: 0} : {
+          ...cached, offset: 0, items: [...prev.items, ...cached.items.filter(item =>
+            !prev.items.some(old => val(old.id) === val(item.id)))],
+        }); setOfflineCache(true);
         setError("EvaTeam недоступна. Показан последний сохранённый снимок задач (без фильтра проекта и поиска). Редактирование временно отключено. " + String(e));
       } catch { setError(String(e)); }
     }
@@ -136,9 +154,35 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       const t = await api.evaTask(code);
       setTask(t);
       setEditName(val(t.name)); setEditText(val(t.text)); setEditStatus(status(t));
-      setEditPriority(priority(t)); setEditResponsible(val(t.responsible));
+      setEditPriority(priority(t));
+      const person = t.responsible && typeof t.responsible === "object" ? t.responsible as Row : null;
+      setEditResponsible(val(person?.id) || val(t.responsible_id));
+      setResponsibleName(val(person?.name) || val(t.responsible) || "Не назначен");
+      setResponsibleSearch("");
+      setResponsibleMatches([]);
     } catch (e) { setError(String(e)); }
   }, [api]);
+
+  useEffect(() => {
+    if (!selected || responsibleSearch.trim().length < 2) {
+      setResponsibleMatches([]);
+      setResponsibleSearching(false);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setResponsibleSearching(true);
+      try {
+        const results = await api.evaPeople(0, responsibleSearch.trim());
+        if (active) setResponsibleMatches(results.items);
+      } catch (err) {
+        if (active) setError("Поиск исполнителя: " + String(err));
+      } finally {
+        if (active) setResponsibleSearching(false);
+      }
+    }, 350);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [api, selected, responsibleSearch]);
 
   useEffect(() => {
     let active = true;
@@ -149,8 +193,19 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
         try { localStorage.setItem("evade:eva-self:" + userId, JSON.stringify(identity)); } catch { /* ignore */ }
       }
     }).catch(e => { if (active) setError("Не удалось связаться с EvaTeam: " + String(e)); });
-    void api.evaProjects().then(p => { if (active) setProjects(p.items); })
-      .catch(e => { if (active) setError(String(e)); });
+    void (async () => {
+      const collected: Row[] = [];
+      let hasMore = true;
+      while (hasMore && collected.length < 2000) {
+        const batch = await api.evaProjects(collected.length);
+        collected.push(...batch.items);
+        hasMore = batch.has_more && batch.items.length > 0;
+      }
+      if (active) {
+        setProjects(collected);
+        if (hasMore) setError("Показаны первые 2000 проектов. Часть структуры может отсутствовать.");
+      }
+    })().catch(e => { if (active) setError("Не удалось загрузить структуру проектов: " + String(e)); });
 
     return () => { active = false; };
   }, [api]);
@@ -243,11 +298,13 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       if (editText !== val(task.text)) changes.text = editText;
       if (editStatus.trim() && editStatus.trim() !== status(task)) changes.status = editStatus.trim();
       if (editPriority !== priority(task)) changes.priority = editPriority;
-      if (editResponsible.trim() && editResponsible.trim() !== val(task.responsible)) changes.responsible = editResponsible.trim();
+      const original = task.responsible && typeof task.responsible === "object"
+        ? val((task.responsible as Row).id) : val(task.responsible_id);
+      if (editResponsible && editResponsible !== original) changes.responsible = editResponsible;
       if (!Object.keys(changes).length) { setMessage("Нет изменений"); return; }
       await api.updateEvaTask(selected, changes);
       setMessage("Изменения сохранены в EvaTeam.");
-      await Promise.all([loadTask(selected), loadList(page.offset)]);
+      await Promise.all([loadTask(selected), loadList(0)]);
     } catch (err) { setError(String(err)); }
     finally { setSaving(false); }
   }
@@ -278,6 +335,11 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
   }
 
   const groupedTasks = groupEvaTasks(page.items);
+  const projectTree = buildProjectTree(page.items, projects);
+  function setGrouping(mode: "project"|"status") {
+    setGroupBy(mode);
+    try { localStorage.setItem("evade:task-group:" + userId, mode); } catch { /* ignored */ }
+  }
   function toggleStatus(key: string) {
     setCollapsedStatuses(current => {
       const updated = {...current, [key]: !current[key]};
@@ -287,6 +349,55 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     });
   }
   const statusSummary = groupedTasks.map(g => ({label:g.label,count:g.rows.length,key:g.key}));
+  function taskEntry(t: Row, index: number) {
+    return <button key={taskCode(t) || index}
+      className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
+      onClick={() => setSelected(taskCode(t))}>
+      <span className="eva-code">{taskCode(t)}</span>
+      <strong>{val(t.name) || "(без названия)"}</strong>
+      <span className="eva-row-meta">
+        <span>Приоритет: {val(t.priority) || "0"}</span>
+        {Boolean(t.cmf_modified_at) && <span><Clock size={12}/> {new Date(String(t.cmf_modified_at)).toLocaleDateString("ru-RU")}</span>}
+      </span>
+    </button>;
+  }
+  function statusSection(group: ReturnType<typeof groupEvaTasks>[number], prefix: string) {
+    const key = "status:" + prefix + ":" + group.key;
+    return <section key={key} className="eva-status-group">
+      <button type="button" className="eva-status-heading eva-subheading"
+        aria-expanded={!collapsedStatuses[key]} onClick={() => toggleStatus(key)}>
+        <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
+        <span>{group.label}</span><span className="eva-status-count">{group.rows.length}</span>
+      </button>
+      {!collapsedStatuses[key] && group.rows.map(taskEntry)}
+    </section>;
+  }
+  function listSection(section: SectionGroup, projectId: string) {
+    const key = "section:" + projectId + ":" + section.key;
+    return <section key={key} className="eva-project-section">
+      <button type="button" className="eva-project-section-heading" aria-expanded={!collapsedStatuses[key]}
+        onClick={() => toggleStatus(key)}>
+        <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
+        <span>{section.label}</span><span className="eva-status-count">{section.count}</span>
+      </button>
+      {!collapsedStatuses[key] && section.statusGroups.map(group => statusSection(group, key))}
+    </section>;
+  }
+  function projectSection(node: ProjectTreeNode, level = 0) {
+    const key = "project:" + node.id;
+    return <section className="eva-project-group" key={key}>
+      <button type="button" className="eva-project-heading" style={{paddingLeft: 16 + level * 13}}
+        aria-expanded={!collapsedStatuses[key]} title={node.path} onClick={() => toggleStatus(key)}>
+        <span className="eva-status-arrow">{collapsedStatuses[key] ? "▸" : "▾"}</span>
+        <span className="eva-project-title">{node.name}</span>
+        <span className="eva-status-count">{node.count}</span>
+      </button>
+      {!collapsedStatuses[key] && <>
+        {node.sections.map(section => listSection(section, node.id))}
+        {node.children.map(child => projectSection(child, level + 1))}
+      </>}
+    </section>;
+  }
   const comments = Array.isArray(task?.comments) ? task.comments as Row[] : [];
   return <div className="eva-workspace">
     <header className="eva-head">
@@ -296,14 +407,9 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
       </div>
       <div className="eva-head-actions">
         <button className="secondary-action" onClick={() => void runSync()} disabled={syncBusy || !activePerson}><RefreshCw size={15} className={syncBusy ? "spin" : ""}/> Синхронизировать</button>
-        <button className="secondary-action" onClick={() => void loadList(page.offset)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
+        <button className="secondary-action" onClick={() => void loadList(0)} disabled={loading || !activePerson}><RefreshCw size={15}/> Обновить</button>
       </div>
     </header>
-    {syncState && (syncState.legacy_tasks > 0 || syncState.legacy_outbox_pending > 0) &&
-      <div className="eva-sync-warning" role="status"><AlertTriangle size={16}/><span>
-        Старые локальные данные ещё не сопоставлены с EvaTeam: {syncState.legacy_tasks} задач,
-        {syncState.legacy_outbox_pending} операций в очереди. Автоматический импорт отключён во избежание дублей и конфликтов.
-      </span></div>}
     {!self && <section className="eva-person-picker">
       <h3>Выбери себя в EvaTeam</h3>
       <p className="muted">Ваша EvaTeam не отдаёт владельца API-токена. Найди свою учётную запись в справочнике. Выбор запомнится в этом браузере.</p>
@@ -369,22 +475,21 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
     </div>}
     <div className="eva-layout">
       <section className="eva-list">
-        <div className="eva-list-heading"><strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong><span>{loading ? "Загрузка…" : `Показано: ${page.items.length}`}</span></div>
-        {groupedTasks.map(group => <section key={group.key} className="eva-status-group">
-          <button type="button" className="eva-status-heading" aria-expanded={!collapsedStatuses[group.key]}
-            onClick={() => toggleStatus(group.key)}>
-            <span className="eva-status-arrow">{collapsedStatuses[group.key] ? "▸" : "▾"}</span>
-            <span>{group.label}</span><span className="eva-status-count">{group.rows.length}</span>
-          </button>
-          {!collapsedStatuses[group.key] && group.rows.map((t, i) =>
-            <button key={taskCode(t) || i} className={"eva-task-row " + (selected === taskCode(t) ? "active" : "")}
-              onClick={() => setSelected(taskCode(t))}>
-              <span className="eva-code">{taskCode(t)}</span><strong>{val(t.name) || "(без названия)"}</strong>
-              <span className="eva-row-meta"><span>Приоритет: {val(t.priority) || "0"}</span>{Boolean(t.cmf_modified_at) && <span><Clock size={12}/> {new Date(String(t.cmf_modified_at)).toLocaleDateString("ru-RU")}</span>}</span>
-            </button>)}
-        </section>)}
+        <div className="eva-list-heading">
+          <strong>{activePerson === self?.id ? "Мои задачи" : nameFor(activePerson)}</strong>
+          <span>{loading ? "Загрузка…" : `Задач: ${page.items.length}`}</span>
+        </div>
+        <div className="eva-group-switch" role="group" aria-label="Группировка задач">
+          <button type="button" className={groupBy === "project" ? "active" : ""}
+            onClick={() => setGrouping("project")}>Проекты и разделы</button>
+          <button type="button" className={groupBy === "status" ? "active" : ""}
+            onClick={() => setGrouping("status")}>Статусы</button>
+        </div>
+        {groupBy === "project"
+          ? projectTree.map(node => projectSection(node))
+          : groupedTasks.map(group => statusSection(group, "root"))}
         {!loading && activePerson && !page.items.length && <p className="muted eva-empty">Нет задач в этой выборке.</p>}
-        <div className="eva-pager"><button disabled={page.offset === 0 || loading} onClick={() => void loadList(Math.max(0, page.offset - 50))}><ChevronLeft size={15}/> Назад</button><span>{page.offset + 1}–{page.offset + page.items.length}</span><button disabled={!page.has_more || loading} onClick={() => void loadList(page.offset + 50)}>Далее <ChevronRight size={15}/></button></div>
+        <div className="eva-pager"><span>Загружено задач: {page.items.length}</span>{page.has_more && <button disabled={loading} onClick={() => void loadList(page.items.length)}>{loading ? "Загрузка…" : "Загрузить ещё"} <ChevronRight size={15}/></button>}</div>
       </section>
       <section className="eva-editor">
         {!task ? <p className="muted eva-empty">Выбери задачу для просмотра и редактирования.</p> : <>
@@ -405,8 +510,24 @@ export default function EvaTasks({ api, userId }: { api: Api; userId: string }) 
                 </select>
               </label>
             </div>
-            <label>Исполнитель (логин / email)<input value={editResponsible} list="eva-people" onChange={e => setEditResponsible(e.target.value)}/></label>
-            <datalist id="eva-people">{people.map((p,i) => <option key={i} value={val(p.login) || val(p.email)}>{val(p.name)}</option>)}</datalist>
+            <div className="eva-assignee-field">
+              <label>Ответственный
+                <span className="eva-assignee-current">{responsibleName}</span>
+                <input value={responsibleSearch} onChange={e => setResponsibleSearch(e.target.value)}
+                  placeholder="Найти по имени или логину…" aria-label="Найти ответственного"/>
+              </label>
+              {responsibleSearching && <small className="muted">Ищу сотрудников…</small>}
+              {responsibleMatches.length > 0 && <div className="eva-assignee-results">
+                {responsibleMatches.map((person, i) => <button type="button" key={val(person.id) || i}
+                  onClick={() => {
+                    const id = val(person.id);
+                    if (!id) return;
+                    setEditResponsible(id);
+                    setResponsibleName(val(person.name) || val(person.login) || id);
+                    setResponsibleMatches([]); setResponsibleSearch("");
+                  }}>{val(person.name) || val(person.login)} <small>{val(person.login)}</small></button>)}
+              </div>}
+            </div>
             <button className="eva-primary" disabled={saving || offlineCache || !editName.trim()}><Save size={16}/> Сохранить изменения</button>
           </form>
           <div className="eva-comments"><h3><MessageSquare size={15}/> Комментарии ({comments.length})</h3>
